@@ -1,0 +1,16 @@
+[project]
+name = "ocr"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "ipykernel>=7.1.0",
+    "jupyter>=1.1.1",
+    "jupyterlab>=4.5.0",
+    "matplot>=0.1.9",
+    "numpy>=2.3.5",
+    "pandas>=2.3.3",
+    "seaborn>=0.13.2",
+    "torch>=2.9.1",
+]
