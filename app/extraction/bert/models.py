@@ -398,3 +398,13 @@ class DocumentOutput(BaseModel):
             exclude_none=True,
             indent=indent,
         )
+
+@dataclass(slots=True)
+class ModelEvaluationReport:
+    summary: dict[str, float]
+    entity_metrics: pd.DataFrame
+    field_metrics: pd.DataFrame
+    document_accuracy: float
+    records: pd.DataFrame
+    account_metrics: pd.DataFrame
+    account_records: pd.DataFrame
