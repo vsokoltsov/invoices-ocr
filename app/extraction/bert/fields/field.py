@@ -1,8 +1,11 @@
 import re
-from pydantic_core import core_schema
 import unicodedata
+
+from pydantic_core import core_schema
+
 from app.extraction.bert.spans import CandidateSpan
 from app.extraction.bert.utils import normalize_with_mapping
+
 
 class Field(str):
     @classmethod

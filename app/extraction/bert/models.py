@@ -1,12 +1,13 @@
-from typing import Any
 from collections.abc import Hashable
 from dataclasses import dataclass
+from typing import Any
 
 import pandas as pd
-from pydantic import BaseModel
 from pydantic import (
     BaseModel,
     ConfigDict,
+)
+from pydantic import (
     Field as PydanticField,
 )
 

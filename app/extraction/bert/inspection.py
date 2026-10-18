@@ -1,8 +1,11 @@
 from dataclasses import dataclass
+
 import pandas as pd
+
+from app.extraction.bert.enums import EntityType
 from app.extraction.bert.reporting import AlignmentReport
 from app.extraction.bert.utils import money_digits
-from app.extraction.bert.enums import EntityType
+
 
 @dataclass(frozen=True, slots=True)
 class AlignmentInspector:

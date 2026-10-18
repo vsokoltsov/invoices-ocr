@@ -1,21 +1,21 @@
-from typing import Any
 from dataclasses import dataclass
-from seqeval.metrics import classification_report
-import pandas as pd
+from typing import Any
+
 import numpy as np
-from app.extraction.bert.operations import DocumentModelTrainer
-from app.extraction.bert.metrics import TokenClassificationMetrics
-from app.extraction.bert.inference import DocumentModelPredictor
+import pandas as pd
+from seqeval.metrics import classification_report
+
 from app.extraction.bert.formatter import (
     DocumentOutputFormatter,
-    evaluate_json_records,
     build_account_evaluation,
-    document_is_exact
+    document_is_exact,
+    evaluate_json_records,
 )
-from app.extraction.bert.models import (
-    ModelEvaluationReport,
-    InvoiceTarget
-)
+from app.extraction.bert.inference import DocumentModelPredictor
+from app.extraction.bert.metrics import TokenClassificationMetrics
+from app.extraction.bert.models import InvoiceTarget, ModelEvaluationReport
+from app.extraction.bert.operations import DocumentModelTrainer
+
 
 @dataclass(slots=True)
 class ModelEvaluator:

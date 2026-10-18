@@ -5,6 +5,7 @@ from collections.abc import Iterable
 from app.extraction.bert.enums import EntityType
 from app.extraction.bert.spans import EntitySpan
 
+
 def normalize_with_mapping(text):
     normalized = []
     original_positions = []

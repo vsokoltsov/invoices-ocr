@@ -1,7 +1,9 @@
 import re
+
+from app.extraction.bert.enums import OCR_CONFUSION_PAIRS, MatchType
 from app.extraction.bert.fields.field import Field
 from app.extraction.bert.spans import CandidateSpan
-from app.extraction.bert.enums import MatchType, OCR_CONFUSION_PAIRS
+
 
 class IdentifierField(Field):
     def compact(self) -> str:

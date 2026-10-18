@@ -1,7 +1,9 @@
 import re
 from dataclasses import dataclass
-from app.extraction.bert.spans import CandidateSpan
+
 from app.extraction.bert.enums import EntityType
+from app.extraction.bert.spans import CandidateSpan
+
 
 @dataclass
 class CandidatesSelector:

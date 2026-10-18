@@ -1,6 +1,8 @@
 import re
+
 from app.extraction.bert.fields.field import Field
 from app.extraction.bert.spans import CandidateSpan
+
 
 class MoneyField(Field):
     def digits(self) -> str:

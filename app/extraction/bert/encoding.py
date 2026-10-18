@@ -1,6 +1,6 @@
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import TypedDict, cast
+from typing import TypedDict
 
 import numpy as np
 from transformers import PreTrainedTokenizerBase
@@ -406,7 +406,7 @@ class TokenLabelBatchEncoder:
                 "attention_mask": [],
             }
         """
-        output: dict[str, list[list[int]]] = {
+        output: TokenizedBatch = {
             "input_ids": [],
             "token_type_ids": [],
             "attention_mask": [],
@@ -533,11 +533,18 @@ class TokenLabelBatchEncoder:
                 for name in (
                     self.tokenizer.model_input_names
                 ):
-                    # Take the input values for the current chunk and 
+                    # Take the input values for the current chunk and
                     # add them to the output batch.
-                    output[name].append(
-                        encoding[name][chunk_index]
-                    )
+                    chunk = encoding[name][chunk_index]
+                    match name:
+                        case "input_ids":
+                            output["input_ids"].append(chunk)
+                        case "attention_mask":
+                            output["attention_mask"].append(chunk)
+                        case "token_type_ids":
+                            output["token_type_ids"].append(chunk)
+                        case _:
+                            raise KeyError(name)
 
                 # Add the labels belonging to the same chunk.
                 # The positions line up:
@@ -570,4 +577,4 @@ class TokenLabelBatchEncoder:
         # }
         # Each row represents one chunk, not necessarily one original invoice.
         # One long invoice can produce several rows.
-        return cast(TokenizedBatch, output)
+        return output

@@ -1,37 +1,13 @@
 from collections import defaultdict
 from collections.abc import Mapping
 from dataclasses import dataclass
-from transformers import (
-    PreTrainedModel,
-    PreTrainedTokenizerBase
-)
+
 import torch
+from transformers import PreTrainedModel, PreTrainedTokenizerBase
+
 from app.extraction.bert.enums import EntityType
+from app.extraction.bert.models import PredictedEntity
 
-@dataclass(frozen=True, slots=True)
-class PredictedEntity:
-    entity: EntityType
-    start: int
-    end: int
-    text: str
-    confidence: float
-
-    def __post_init__(self) -> None:
-        if self.start < 0:
-            raise ValueError(
-                "Entity start cannot be negative"
-            )
-
-        if self.end <= self.start:
-            raise ValueError(
-                f"Invalid entity span: "
-                f"[{self.start}, {self.end})"
-            )
-
-        if not 0.0 <= self.confidence <= 1.0:
-            raise ValueError(
-                "Confidence must be between 0 and 1"
-            )
 
 @dataclass(slots=True)
 class DocumentModelPredictor:

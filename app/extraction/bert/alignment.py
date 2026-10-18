@@ -1,12 +1,10 @@
 import re
 from dataclasses import dataclass
-from app.extraction.bert.spans import (
-    FinancialSummarySpans,
-    CandidateSpan,
-    EntitySpan
-)
+
 from app.extraction.bert.candidates import CandidatesSelector
 from app.extraction.bert.models import InvoiceTarget
+from app.extraction.bert.spans import CandidateSpan, EntitySpan, FinancialSummarySpans
+
 
 @dataclass
 class FinancialSummaryAligner:

@@ -1,15 +1,17 @@
 from dataclasses import dataclass
+
 import pandas as pd
+
 from app.extraction.bert.alignment import DocumentAligner
-from app.extraction.bert.utils import group_spans_by_entity
 from app.extraction.bert.models import (
-    DocumentReportRow,
     DetailReportRow,
+    DocumentReportRow,
     EntityReport,
     FinancialReport,
-    InvoiceTarget
-
+    InvoiceTarget,
 )
+from app.extraction.bert.utils import group_spans_by_entity
+
 
 @dataclass(slots=True)
 class AlignmentReport:

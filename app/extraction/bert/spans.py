@@ -1,5 +1,7 @@
 from dataclasses import dataclass
+
 from app.extraction.bert.enums import EntityType
+
 
 @dataclass(frozen=True, slots=True)
 class CandidateSpan:

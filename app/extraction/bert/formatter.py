@@ -1,25 +1,42 @@
-from collections import defaultdict
-from dataclasses import dataclass
-from typing import Any
-
-from pydantic import (
-    BaseModel,
-    ConfigDict,
-    Field as PydanticField,
-)
 import re
 import unicodedata
-
+from collections import defaultdict
+from collections.abc import Iterable, Mapping
+from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
-from app.extraction.bert.enums import MatchType, EntityType
+from typing import Any
+
+import numpy as np
+import pandas as pd
+from pydantic import (
+    BaseModel,
+)
+
+from app.extraction.bert.enums import EntityType, MatchType
 from app.extraction.bert.fields.account import AccountNumberField
 from app.extraction.bert.fields.identifier import IdentifierField
 from app.extraction.bert.models import (
+    DocumentOutput,
     InvoiceData,
     PaymentInstructions,
-    SubtotalData,
     PredictedEntity,
-    DocumentOutput
+    SubtotalData,
+)
+
+ACCOUNT_NUMBER_PATH = (
+    "payment_instructions.account_number"
+)
+
+ACCEPTED_ACCOUNT_MATCHES = {
+    MatchType.EXACT,
+    MatchType.NORMALIZED,
+    MatchType.OCR_EQUIVALENT,
+}
+
+
+DocumentData = (
+    BaseModel
+    | Mapping[str, Any]
 )
 
 
@@ -127,34 +144,6 @@ def normalize_value(
     )
 
     return normalized
-
-from collections.abc import Mapping
-from typing import Any
-
-from pydantic import BaseModel
-from collections.abc import Iterable, Mapping
-from typing import Any
-
-import numpy as np
-import pandas as pd
-from pydantic import BaseModel
-
-ACCOUNT_NUMBER_PATH = (
-    "payment_instructions.account_number"
-)
-
-ACCEPTED_ACCOUNT_MATCHES = {
-    MatchType.EXACT,
-    MatchType.NORMALIZED,
-    MatchType.OCR_EQUIVALENT,
-}
-
-
-DocumentData = (
-    BaseModel
-    | Mapping[str, Any]
-)
-
 
 def document_to_dict(
     document: BaseModel | Mapping[str, Any],

@@ -1,5 +1,6 @@
 from collections.abc import Mapping
 from dataclasses import dataclass
+from typing import cast
 
 import numpy as np
 import torch
@@ -13,6 +14,10 @@ from torchmetrics.functional.classification import (
     multiclass_f1_score,
 )
 from transformers import EvalPrediction
+
+# seqeval annotates this parameter as str, but only the
+# integer 0 returns a score of 0 without a warning.
+_ZERO_DIVISION = cast(str, 0)
 
 @dataclass(frozen=True, slots=True)
 class TokenClassificationMetrics:
@@ -128,17 +133,17 @@ class TokenClassificationMetrics:
             "precision": precision_score(
                 actual_labels,
                 predicted_labels,
-                zero_division=0,
+                zero_division=_ZERO_DIVISION,
             ),
             "recall": recall_score(
                 actual_labels,
                 predicted_labels,
-                zero_division=0,
+                zero_division=_ZERO_DIVISION,
             ),
             "f1": f1_score(
                 actual_labels,
                 predicted_labels,
-                zero_division=0,
+                zero_division=_ZERO_DIVISION,
             ),
 
             # Token-level TorchMetrics.

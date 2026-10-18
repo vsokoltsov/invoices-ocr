@@ -1,6 +1,8 @@
 import re
+
 from app.extraction.bert.fields.identifier import IdentifierField
 from app.extraction.bert.spans import CandidateSpan
+
 
 class AccountNumberField(
     IdentifierField

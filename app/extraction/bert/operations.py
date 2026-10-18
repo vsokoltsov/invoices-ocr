@@ -1,5 +1,4 @@
-from dataclasses import dataclass
-from dataclasses import field
+from dataclasses import dataclass, field
 from typing import cast
 
 from datasets import DatasetDict
@@ -11,7 +10,9 @@ from transformers import (
     Trainer,
     TrainingArguments,
 )
+
 from app.extraction.bert.metrics import TokenClassificationMetrics
+
 
 @dataclass(slots=True)
 class DocumentModelTrainer:
