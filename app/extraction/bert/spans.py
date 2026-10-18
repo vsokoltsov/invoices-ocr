@@ -23,7 +23,7 @@ class EntitySpan:
 
     start: int
     end: int
-    entity: str
+    entity: EntityType
     value: str
 
     def __post_init__(self):
