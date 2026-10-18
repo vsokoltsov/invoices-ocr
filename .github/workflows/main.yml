@@ -1,0 +1,53 @@
+name: Global checks
+
+on:
+  pull_request:
+  push:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: global-checks-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Ruff
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v10
+        with:
+          enable-cache: true
+          python-version: "3.12"
+
+      - name: Install lint dependencies
+        run: uv sync --frozen --only-group dev
+
+      - name: Run Ruff
+        run: uv run --frozen --no-sync ruff check .
+
+  typecheck:
+    name: ty
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v10
+        with:
+          enable-cache: true
+          python-version: "3.12"
+
+      - name: Install project dependencies
+        run: uv sync --frozen
+
+      - name: Run ty
+        run: uv run --frozen --no-sync ty check .
