@@ -1,15 +1,24 @@
-from dataclasses import dataclass
+from typing import Any
 from collections.abc import Hashable
+from dataclasses import dataclass
+
 import pandas as pd
 from pydantic import BaseModel
-from app.extraction.bert.fields.field import Field
-from app.extraction.bert.fields.account import AccountNumberField
-from app.extraction.bert.fields.identifier import IdentifierField
-from app.extraction.bert.fields.address import AddressField
-from app.extraction.bert.fields.money import MoneyField
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field as PydanticField,
+)
+
 from app.extraction.bert.enums import EntityType
+from app.extraction.bert.fields.account import AccountNumberField
+from app.extraction.bert.fields.address import AddressField
+from app.extraction.bert.fields.field import Field
+from app.extraction.bert.fields.identifier import IdentifierField
+from app.extraction.bert.fields.money import MoneyField
 from app.extraction.bert.spans import EntitySpan
 from app.extraction.bert.utils import money_digits
+
 
 class InvoiceData(BaseModel):
     invoice_number: IdentifierField | None = None
@@ -318,3 +327,74 @@ class FinancialReport:
         )
 
         return result
+
+@dataclass(frozen=True, slots=True)
+class PredictedEntity:
+    entity: EntityType
+    start: int
+    end: int
+    text: str
+    confidence: float
+
+    def __post_init__(self) -> None:
+        if self.start < 0:
+            raise ValueError(
+                "Entity start cannot be negative"
+            )
+
+        if self.end <= self.start:
+            raise ValueError(
+                f"Invalid entity span: "
+                f"[{self.start}, {self.end})"
+            )
+
+        if not 0.0 <= self.confidence <= 1.0:
+            raise ValueError(
+                "Confidence must be between 0 and 1"
+            )
+
+class DocumentOutput(BaseModel):
+    """
+    Structured prediction returned by the document model.
+
+    Fields may be missing because model inference is not
+    guaranteed to find every entity.
+
+    `items=None` means line-item extraction is not currently
+    supported by this model.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+
+    invoice: InvoiceData = PydanticField(
+        default_factory=InvoiceData
+    )
+
+    subtotal: SubtotalData = PydanticField(
+        default_factory=SubtotalData
+    )
+
+    payment_instructions: (
+        PaymentInstructions
+    ) = PydanticField(
+        default_factory=PaymentInstructions
+    )
+
+    items: list[dict[str, Any]] | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return self.model_dump(
+            exclude_none=True
+        )
+
+    def to_json(
+        self,
+        *,
+        indent: int | None = 2,
+    ) -> str:
+        return self.model_dump_json(
+            exclude_none=True,
+            indent=indent,
+        )
