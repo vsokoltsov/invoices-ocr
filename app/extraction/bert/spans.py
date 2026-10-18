@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from app.extraction.bert.enums import EntityType
 
 @dataclass(frozen=True, slots=True)
 class CandidateSpan:
@@ -63,3 +64,23 @@ class EntitySpan:
             self.start < end
             and self.end > start
         )
+
+@dataclass(frozen=True, slots=True)
+class FinancialSummarySpans:
+    net: CandidateSpan
+    tax: CandidateSpan
+    total: CandidateSpan
+
+    def get(
+        self,
+        entity: EntityType,
+    ) -> CandidateSpan | None:
+        match entity:
+            case EntityType.TAX:
+                return self.tax
+
+            case EntityType.TOTAL:
+                return self.total
+
+            case _:
+                return None
