@@ -2,107 +2,11 @@ from collections import Counter
 from collections.abc import Mapping
 
 import pytest
-from tokenizers import Tokenizer
-from tokenizers.models import WordLevel
-from tokenizers.pre_tokenizers import Whitespace
-from tokenizers.processors import TemplateProcessing
 from transformers import PreTrainedTokenizerFast
 
 from app.extraction.bert.alignment import DocumentAligner
 from app.extraction.bert.encoding import TokenizedBatch, TokenLabelBatchEncoder
-from app.extraction.bert.enums import EntityType
 from app.extraction.bert.models import InvoiceTarget
-
-
-@pytest.fixture
-def fast_tokenizer() -> PreTrainedTokenizerFast:
-    """Provide an offline fast tokenizer with real offsets and overflow windows."""
-
-    tokens = [
-        "[UNK]",
-        "[PAD]",
-        "[CLS]",
-        "[SEP]",
-        "Invoice",
-        "no",
-        ":",
-        "40108666",
-        "Seller",
-        "Acme",
-        "Corporation",
-        "prefix",
-        "middle",
-        "suffix",
-        "IBAN",
-        "GB12ABCD12345678901234",
-    ]
-    vocabulary = {
-        token: token_id
-        for token_id, token in enumerate(tokens)
-    }
-    backend = Tokenizer(
-        WordLevel(
-            vocabulary,
-            unk_token="[UNK]",
-        )
-    )
-    backend.pre_tokenizer = Whitespace()
-    backend.post_processor = TemplateProcessing(
-        single="[CLS] $A [SEP]",
-        special_tokens=[
-            ("[CLS]", vocabulary["[CLS]"]),
-            ("[SEP]", vocabulary["[SEP]"]),
-        ],
-    )
-
-    tokenizer = PreTrainedTokenizerFast(
-        tokenizer_object=backend,
-        unk_token="[UNK]",
-        pad_token="[PAD]",
-        cls_token="[CLS]",
-        sep_token="[SEP]",
-    )
-    tokenizer.model_input_names = [
-        "input_ids",
-        "token_type_ids",
-        "attention_mask",
-    ]
-    return tokenizer
-
-
-@pytest.fixture
-def label2id() -> dict[str, int]:
-    """Provide BIO label IDs for every entity supported by the application."""
-
-    labels = ["O"]
-    for entity in EntityType:
-        labels.extend(
-            [
-                f"B-{entity.value}",
-                f"I-{entity.value}",
-            ]
-        )
-    return {
-        label: label_id
-        for label_id, label in enumerate(labels)
-    }
-
-
-@pytest.fixture
-def batch_encoder(
-    fast_tokenizer: PreTrainedTokenizerFast,
-    document_aligner: DocumentAligner,
-    label2id: Mapping[str, int],
-) -> TokenLabelBatchEncoder:
-    """Build the encoder with deterministic, offline collaborators."""
-
-    return TokenLabelBatchEncoder(
-        tokenizer=fast_tokenizer,
-        aligner=document_aligner,
-        label2id=label2id,
-        max_length=32,
-        window_stride=4,
-    )
 
 
 @pytest.fixture
