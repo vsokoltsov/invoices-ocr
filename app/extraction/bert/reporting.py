@@ -121,6 +121,11 @@ class AlignmentReport:
         )
 
     def missing_counts(self) -> pd.DataFrame:
+        if self.details.empty:
+            return pd.DataFrame(
+                columns=pd.Index(["missing_count"]),
+            )
+
         missing = (
             self.details.loc[
                 ~self.details["aligned"],
@@ -136,6 +141,9 @@ class AlignmentReport:
         self,
         limit: int = 10,
     ) -> pd.DataFrame:
+        if self.documents.empty:
+            return self.documents.copy()
+
         return self.documents.nsmallest(
             limit,
             "alignment_coverage",
