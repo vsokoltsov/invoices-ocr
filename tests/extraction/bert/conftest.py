@@ -1,11 +1,13 @@
 from collections.abc import Callable
 from typing import Protocol
 
+import pandas as pd
 import pytest
 
 from app.extraction.bert.alignment import DocumentAligner, FinancialSummaryAligner
 from app.extraction.bert.candidates import CandidatesSelector
 from app.extraction.bert.models import InvoiceTarget
+from app.extraction.bert.reporting import AlignmentReport
 from app.extraction.bert.spans import CandidateSpan
 
 
@@ -75,3 +77,60 @@ def target_factory() -> _TargetFactory:
         )
 
     return create
+
+
+@pytest.fixture
+def alignment_frame(target_factory: _TargetFactory) -> pd.DataFrame:
+    complete_target = target_factory(
+        invoice={
+            "invoice_number": "1001",
+            "seller_name": "Acme",
+        },
+        subtotal={
+            "tax": "10.00",
+            "total": "100.00",
+        },
+    )
+    partial_target = target_factory(
+        invoice={
+            "invoice_number": "2002",
+            "seller_name": "Missing Corp",
+        },
+        subtotal={
+            "tax": "5.00",
+            "total": "55.00",
+        },
+    )
+
+    return pd.DataFrame(
+        [
+            {
+                "file_name": "complete.jpg",
+                "ocred_text": (
+                    "Invoice no: 1001 Seller: Acme "
+                    "Total $ 90.00 $ 10.00 $ 100.00"
+                ),
+                "target": complete_target,
+            },
+            {
+                "file_name": "partial.jpg",
+                "ocred_text": (
+                    "Invoice no: 2002 "
+                    "Total $ 45.00 $ 5.00 $ 50.00"
+                ),
+                "target": partial_target,
+            },
+        ],
+        index=pd.Index([10, 20]),
+    )
+
+
+@pytest.fixture
+def alignment_report(
+    alignment_frame: pd.DataFrame,
+    document_aligner: DocumentAligner,
+) -> AlignmentReport:
+    return AlignmentReport.build(
+        frame=alignment_frame,
+        aligner=document_aligner,
+    )

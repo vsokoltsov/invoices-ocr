@@ -15,6 +15,9 @@ class AlignmentInspector:
         self,
         row_index: int,
     ) -> pd.DataFrame:
+        if self.report.details.empty:
+            return self.report.details.copy()
+
         return (
             self.report.details.loc[
                 self.report.details[
@@ -28,6 +31,9 @@ class AlignmentInspector:
     def missing(
         self,
     ) -> pd.DataFrame:
+        if self.report.details.empty:
+            return self.report.details.copy()
+
         return (
             self.report.details.loc[
                 ~self.report.details["aligned"]
@@ -44,6 +50,9 @@ class AlignmentInspector:
     def ambiguous(
         self,
     ) -> pd.DataFrame:
+        if self.report.details.empty:
+            return self.report.details.copy()
+
         return (
             self.report.details.loc[
                 self.report.details["ambiguous"]
@@ -60,6 +69,9 @@ class AlignmentInspector:
     def partial_matches(
         self,
     ) -> pd.DataFrame:
+        if self.report.details.empty:
+            return self.report.details.copy()
+
         return (
             self.report.details.loc[
                 self.report.details[
@@ -86,6 +98,9 @@ class AlignmentInspector:
     def financial_mismatches(
         self,
     ) -> pd.DataFrame:
+        if self.report.details.empty:
+            return self.report.details.copy()
+
         financial = self.report.details[
             self.report.details["entity"].isin(
                 [
