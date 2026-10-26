@@ -23,27 +23,6 @@ def selector() -> CandidatesSelector:
 
 
 @pytest.fixture
-def candidate_factory() -> Callable[[int, int], CandidateSpan]:
-    def create(start: int, end: int) -> CandidateSpan:
-        return CandidateSpan(start=start, end=end)
-
-    return create
-
-
-@pytest.fixture
-def span_for() -> SpanFor:
-    def create(text: str, value: str, occurrence: int = 1) -> CandidateSpan:
-        start = -1
-
-        for _ in range(occurrence):
-            start = text.index(value, start + 1)
-
-        return CandidateSpan(start=start, end=start + len(value))
-
-    return create
-
-
-@pytest.fixture
 def unique_candidate(candidate_factory: Callable[[int, int], CandidateSpan]) -> CandidateSpan:
     return candidate_factory(12, 20)
 

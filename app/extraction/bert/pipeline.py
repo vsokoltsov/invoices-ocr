@@ -1,30 +1,64 @@
 import os
-import numpy as np
 import random
 from dataclasses import dataclass
 from pathlib import Path
-import torch
-import pandas as pd
-from sklearn.model_selection import train_test_split
-from app.extraction.bert.candidates import CandidatesSelector
-from app.extraction.bert.alignment import DocumentAligner, FinancialSummaryAligner
-from app.extraction.bert.encoding import TokenLabelBatchEncoder
-from app.extraction.bert.dataset import HuggingFaceDatasetBuilder
-from app.extraction.bert.metrics import TokenClassificationMetrics
-from app.extraction.bert.operations import DocumentModelTrainer
-from app.extraction.bert.formatter import DocumentOutputFormatter
-from app.extraction.bert.inference import DocumentModelPredictor
-from app.extraction.bert.models import InvoiceTarget
+from zipfile import ZipFile
 
+import numpy as np
+import pandas as pd
+import requests
+import torch
+from sklearn.model_selection import train_test_split
 from transformers import (
     AutoModelForTokenClassification,
     AutoTokenizer,
-    DataCollatorForTokenClassification,
-    EarlyStoppingCallback,
-    Trainer,
     TrainingArguments,
     set_seed,
 )
+
+from app.extraction.bert.alignment import DocumentAligner, FinancialSummaryAligner
+from app.extraction.bert.candidates import CandidatesSelector
+from app.extraction.bert.dataset import HuggingFaceDatasetBuilder
+from app.extraction.bert.encoding import TokenLabelBatchEncoder
+from app.extraction.bert.formatter import DocumentOutputFormatter
+from app.extraction.bert.inference import DocumentModelPredictor
+from app.extraction.bert.metrics import TokenClassificationMetrics
+from app.extraction.bert.models import InvoiceTarget
+from app.extraction.bert.operations import DocumentModelTrainer
+
+
+def download_and_extract_zip(
+    *,
+    url: str,
+    archive_path: Path,
+    destination: Path,
+) -> None:
+    archive_path.parent.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    destination.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    with requests.get(
+        url,
+        stream=True,
+        timeout=(10, 300),
+    ) as response:
+        response.raise_for_status()
+
+        with archive_path.open("wb") as file:
+            for chunk in response.iter_content(
+                chunk_size=1024 * 1024,
+            ):
+                if chunk:
+                    file.write(chunk)
+
+    with ZipFile(archive_path) as archive:
+        archive.extractall(destination)
 
 ENTITY_TYPES = [
     "INVOICE_NUMBER",
@@ -42,20 +76,6 @@ ENTITY_TYPES = [
     "ACCOUNT_NUMBER",
     "PAYMENT_METHOD",
 ]
-
-# BASELINE_ENTITIES = [
-#     "ACCOUNT_NUMBER",
-#     "INVOICE_NUMBER",
-#     "INVOICE_DATE",
-#     "SELLER_NAME",
-#     "SELLER_ADDRESS",
-#     "CLIENT_NAME",
-#     "CLIENT_ADDRESS",
-#     "TAX",
-#     "TOTAL",
-# ]
-
-# ENTITY_TYPES = BASELINE_ENTITIES
 
 LABELS = ["O"]
 
@@ -114,6 +134,7 @@ class BertTrainingPipeline:
         device = detect_device()
 
         print("PyTorch:", torch.__version__)
+        print("Device:", device)
         print("CUDA:", torch.cuda.is_available())
         print("MPS available:", torch.backends.mps.is_available())
 
@@ -429,6 +450,24 @@ class BertTrainingPipeline:
             }
             for entity in sample_entities
         ])
+
+        (output_dir / "sample_actual.json").write_text(
+            sample_actual.model_dump_json(
+                exclude_none=True,
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+
+        (output_dir / "sample_prediction.json").write_text(
+            sample_prediction.to_json(),
+            encoding="utf-8",
+        )
+
+        sample_entities_frame.to_csv(
+            output_dir / "sample_entities.csv",
+            index=False,
+        )
 
         print(f"====== Training is done. Artifacts are stored in {output_dir} ======")
 
