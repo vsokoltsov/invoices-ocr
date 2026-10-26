@@ -13,7 +13,7 @@ from app.extraction.bert.alignment import DocumentAligner, FinancialSummaryAlign
 from app.extraction.bert.candidates import CandidatesSelector
 from app.extraction.bert.encoding import TokenLabelBatchEncoder
 from app.extraction.bert.enums import EntityType
-from app.extraction.bert.models import InvoiceTarget
+from app.extraction.bert.models import InvoiceTarget, PredictedEntity
 from app.extraction.bert.reporting import AlignmentReport
 from app.extraction.bert.spans import CandidateSpan
 
@@ -35,6 +35,17 @@ class _TargetFactory(Protocol):
         subtotal: dict[str, object] | None = None,
         payment_instructions: dict[str, object] | None = None,
     ) -> InvoiceTarget: ...
+
+
+class _PredictedEntityFactory(Protocol):
+    def __call__(
+        self,
+        *,
+        entity: EntityType,
+        start: int,
+        text: str,
+        confidence: float = 0.9,
+    ) -> PredictedEntity: ...
 
 
 @pytest.fixture
@@ -172,6 +183,28 @@ def target_factory() -> _TargetFactory:
                 "payment_instructions": payment_instructions or {},
                 "items": [],
             }
+        )
+
+    return create
+
+
+@pytest.fixture
+def predicted_entity_factory() -> _PredictedEntityFactory:
+    """Create valid predicted entities without repeating span bookkeeping."""
+
+    def create(
+        *,
+        entity: EntityType,
+        start: int,
+        text: str,
+        confidence: float = 0.9,
+    ) -> PredictedEntity:
+        return PredictedEntity(
+            entity=entity,
+            start=start,
+            end=start + len(text),
+            text=text,
+            confidence=confidence,
         )
 
     return create
