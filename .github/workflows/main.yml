@@ -70,4 +70,69 @@ jobs:
         run: uv sync --frozen
 
       - name: Run pytest
-        run: uv run --frozen --no-sync pytest
+        run: >-
+          uv run --frozen --no-sync pytest
+          --cov=app
+          --cov-branch
+          --cov-report=term-missing
+          --cov-report=xml:coverage.xml
+          --cov-report=html:htmlcov
+          --junitxml=test-results.xml
+
+      - name: Add coverage to job summary
+        if: success()
+        run: |
+          {
+            echo "## Code coverage"
+            echo
+            echo '```text'
+            uv run --frozen --no-sync coverage report
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Add test results to job summary
+        if: always()
+        run: |
+          if [ ! -f test-results.xml ]; then
+            echo "## Test results" >> "$GITHUB_STEP_SUMMARY"
+            echo "Test result XML was not generated." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          {
+            echo "## Test results"
+            echo
+            uv run --frozen --no-sync python - <<'PY'
+          import xml.etree.ElementTree as ET
+
+          root = ET.parse("test-results.xml").getroot()
+          attributes = root.attrib
+
+          def total(name: str) -> int:
+              if name in attributes:
+                  return int(attributes[name])
+              return sum(
+                  int(suite.attrib.get(name, 0))
+                  for suite in root.findall("testsuite")
+              )
+
+          print("| Metric | Value |")
+          print("| --- | ---: |")
+          print(f"| Total | {total('tests')} |")
+          print(f"| Failures | {total('failures')} |")
+          print(f"| Errors | {total('errors')} |")
+          print(f"| Skipped | {total('skipped')} |")
+          print(f"| Duration (seconds) | {attributes.get('time', 'n/a')} |")
+          PY
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload coverage artifacts
+        if: success()
+        uses: actions/upload-artifact@v6
+        with:
+          name: pytest-coverage
+          path: |
+            coverage.xml
+            htmlcov/
+            test-results.xml
+          if-no-files-found: error
