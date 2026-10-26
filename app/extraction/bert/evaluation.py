@@ -5,13 +5,13 @@ import numpy as np
 import pandas as pd
 from seqeval.metrics import classification_report
 
-from app.extraction.bert.formatter import (
-    DocumentOutputFormatter,
-    build_account_evaluation,
+from app.extraction.bert.account_evaluation import build_account_evaluation
+from app.extraction.bert.formatter import DocumentOutputFormatter
+from app.extraction.bert.inference import DocumentModelPredictor
+from app.extraction.bert.json_evaluation import (
     document_is_exact,
     evaluate_json_records,
 )
-from app.extraction.bert.inference import DocumentModelPredictor
 from app.extraction.bert.metrics import TokenClassificationMetrics
 from app.extraction.bert.models import InvoiceTarget, ModelEvaluationReport
 from app.extraction.bert.operations import DocumentModelTrainer
