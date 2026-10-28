@@ -2,9 +2,9 @@ import argparse
 from collections.abc import Sequence
 
 from app.aggregates.bert import BertTrainingParams
-from app.config import BertConfig, Settings
+from app.config import BertConfig, Settings, get_settings
 from app.extraction.bert.pipeline import BertTrainingPipeline
-from app.config import get_settings
+
 
 def option_name(field_name: str) -> str:
     return "--" + field_name.lower().replace("_", "-")
@@ -15,19 +15,22 @@ def add_bert_options(
 ) -> None:
     for name, field in BertConfig.model_fields.items():
         default = getattr(config, name)
-        if field.annotation is bool:
+        argument_options = {
+            "help": field.description,
+            "default": default,
+            "metavar": option_name(name).removeprefix("--"),
+        }
+        if isinstance(default, bool):
             parser.add_argument(
                 option_name(name),
                 action=argparse.BooleanOptionalAction,
-                help=field.description,
-                default=default,
+                **argument_options,
             )
         else:
             parser.add_argument(
                 option_name(name),
-                type=field.annotation,
-                help=field.description,
-                default=default,
+                type=type(default),
+                **argument_options,
             )
 
 def train_bert(

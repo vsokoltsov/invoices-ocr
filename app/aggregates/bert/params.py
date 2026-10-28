@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 
+
 @dataclass(frozen=True, slots=True)
 class BertTrainingParams:
     """Resolved parameters for one BERT training run."""

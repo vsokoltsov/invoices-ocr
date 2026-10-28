@@ -16,6 +16,7 @@ from transformers import (
     set_seed,
 )
 
+from app.aggregates.bert import BertTrainingParams
 from app.extraction.bert.alignment import DocumentAligner, FinancialSummaryAligner
 from app.extraction.bert.candidates import CandidatesSelector
 from app.extraction.bert.dataset import HuggingFaceDatasetBuilder
@@ -25,7 +26,6 @@ from app.extraction.bert.inference import DocumentModelPredictor
 from app.extraction.bert.metrics import TokenClassificationMetrics
 from app.extraction.bert.models import InvoiceTarget
 from app.extraction.bert.operations import DocumentModelTrainer
-from app.aggregates.bert import BertTrainingParams
 
 
 def download_and_extract_zip(
