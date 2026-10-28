@@ -10,3 +10,7 @@ wheels/
 .venv
 data/raw/
 .DS_Store
+.coverage
+coverage.xml
+htmlcov/
+.env
