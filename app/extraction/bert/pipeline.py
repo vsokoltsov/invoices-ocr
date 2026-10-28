@@ -366,6 +366,11 @@ class BertTrainingPipeline:
         training_result = (
             document_model_trainer.train()
         )
+        training_result_frame = pd.DataFrame([{
+            "global_step": training_result.global_step,
+            "training_loss": training_result.training_loss,
+            **training_result.metrics,
+        }])
 
         training_history = pd.DataFrame(
             data=document_model_trainer
@@ -376,7 +381,7 @@ class BertTrainingPipeline:
 
         print("====== 11. Save training results ======")
         document_model_trainer.save(output_directory=str(Path(output_dir / "bert_cli")))
-        training_result.to_csv(Path(output_dir / "bert_training_result.csv"))
+        training_result_frame.to_csv(Path(output_dir / "bert_training_result.csv"))
         training_history.to_csv(Path(output_dir / "bert_training_history.csv"))
         
         print("====== 12. Validate model results ======")
