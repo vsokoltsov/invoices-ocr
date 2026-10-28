@@ -23,12 +23,14 @@ def add_bert_options(
         if isinstance(default, bool):
             parser.add_argument(
                 option_name(name),
+                dest=name,
                 action=argparse.BooleanOptionalAction,
                 **argument_options,
             )
         else:
             parser.add_argument(
                 option_name(name),
+                dest=name,
                 type=type(default),
                 **argument_options,
             )
