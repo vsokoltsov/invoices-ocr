@@ -25,6 +25,7 @@ from app.extraction.bert.inference import DocumentModelPredictor
 from app.extraction.bert.metrics import TokenClassificationMetrics
 from app.extraction.bert.models import InvoiceTarget
 from app.extraction.bert.operations import DocumentModelTrainer
+from app.aggregates.bert import BertTrainingParams
 
 
 def download_and_extract_zip(
@@ -82,13 +83,12 @@ LABELS = ["O"]
 
 @dataclass
 class BertTrainingPipeline:
-    data_path: str
-    artifacts_path: str
+    params: BertTrainingParams
     
     def run(self):
         random_state = 42
         model_name = "google-bert/bert-base-uncased"
-        invoices_path = Path(os.path.join(self.data_path, "invoices"))
+        invoices_path = Path(os.path.join(self.params.data_path, "invoices"))
         for entity in ENTITY_TYPES:
             LABELS.extend([
                 f"B-{entity}",
@@ -105,7 +105,7 @@ class BertTrainingPipeline:
             for label, index in label2id.items()
         }
         output_dir = Path(
-            self.artifacts_path,
+            self.params.debug_artifacts_path,
             'bert-invoice-cli'
         )
 
