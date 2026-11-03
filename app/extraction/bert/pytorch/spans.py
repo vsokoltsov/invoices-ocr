@@ -1,15 +1,16 @@
 import re
-from typing import ClassVar
-from dataclasses import dataclass
 import unicodedata
-import pandas as pd
-import json
+from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
-from rapidfuzz import fuzz
 from difflib import SequenceMatcher
-import contextlib
-import io
-from app.extraction.bert.pytorch.annotations import OCRSummarySpanEntity, OCRSpanEntity, OCRSpanResult
+from typing import ClassVar
+
+from rapidfuzz import fuzz
+
+from app.extraction.bert.pytorch.annotations import (
+    OCRSpanEntity,
+    OCRSpanResult,
+)
 from app.extraction.bert.pytorch.enums import InvoiceField
 
 ACCOUNT_NUMBER_MIN_SCORE = 80
@@ -21,6 +22,7 @@ NUMERIC_FIELD_NAMES = {
     "discount",
     "total",
 }
+
 
 @dataclass
 class Normalizer:
@@ -54,7 +56,6 @@ class Normalizer:
         value = unicodedata.normalize("NFKC", str(value)).casefold()
         return re.sub(r"[\s./\-]", "", value)
 
-
     def normalize(self, value: str, path: str = "") -> str:
         """Normalize text, or an identifier when its field path is supplied."""
         if path.rsplit(".", 1)[-1] in {"invoice_number", "account_number"}:
@@ -62,7 +63,9 @@ class Normalizer:
         normalized, _ = self.normalize_with_offsets(str(value))
         return normalized
 
-    def normalize_number(self, value: str, *, percentage: bool = False) -> Decimal | None:
+    def normalize_number(
+        self, value: str, *, percentage: bool = False
+    ) -> Decimal | None:
         """Parse invoice amounts with up to two decimal places and valid grouping.
 
         Accept comma/dot decimals, grouped thousands, and surrounding currency
@@ -102,7 +105,9 @@ class Normalizer:
                 return None
 
         if not re.fullmatch(r"[0-9]+", integer_part):
-            if not re.fullmatch(r"[0-9]{1,3}([.,'\s])[0-9]{3}(?:\1[0-9]{3})*", integer_part):
+            if not re.fullmatch(
+                r"[0-9]{1,3}([.,'\s])[0-9]{3}(?:\1[0-9]{3})*", integer_part
+            ):
                 return None
         integer_digits = re.sub(r"[^0-9]", "", integer_part)
         canonical = sign + integer_digits
@@ -113,6 +118,7 @@ class Normalizer:
             return Decimal(canonical)
         except InvalidOperation:
             return None
+
 
 @dataclass
 class NumericField:
@@ -138,10 +144,7 @@ class NumericField:
         kept significant (so 13.99 cannot match 139,9).
         """
         is_percentage = unicodedata.normalize("NFKC", str(value)).strip().endswith("%")
-        amount = self.normalizer.normalize_number(
-            value,
-            percentage=is_percentage
-        )
+        amount = self.normalizer.normalize_number(value, percentage=is_percentage)
         if amount is None:
             raise ValueError(f"Invalid or ambiguous invoice amount: {value!r}")
         number_text = format(amount, "f")
@@ -203,7 +206,6 @@ class OCRSummarySpan:
         r"(?![\d.,])"
     )
 
-
     def find(
         self,
         text: str,
@@ -225,11 +227,13 @@ class OCRSummarySpan:
         """
 
         # Find all occurrences of the word Total
-        anchors = list(re.finditer(
-            r"\bTotal\b",
-            text,
-            flags=re.IGNORECASE,
-        ))
+        anchors = list(
+            re.finditer(
+                r"\bTotal\b",
+                text,
+                flags=re.IGNORECASE,
+            )
+        )
 
         if not anchors:
             return {}
@@ -240,34 +244,37 @@ class OCRSummarySpan:
         # Set the search boundary to at most 200 characters after the anchor.
         # min() prevents the boundary from exceeding the document length
         region_end = min(len(text), anchor.end() + lookahead)
-        
 
         # Extract amounts after `Total`
         # These matches already contain offsets into the original full text.
         # Search the original text, beginning immediately after Total and stopping at region_end.
         # Example:
         # ["2 731,78", "273,18", "3 004,96"]
-        amounts = list(self.MONEY_PATTERN.finditer(
-            text,
-            anchor.end(),
-            region_end,
-        ))
+        amounts = list(
+            self.MONEY_PATTERN.finditer(
+                text,
+                anchor.end(),
+                region_end,
+            )
+        )
 
         # Require the expected three-amount structure.
-        # If OCR loses an amount—or the 200-character region contains an 
+        # If OCR loses an amount—or the 200-character region contains an
         # extra amount—the function returns {}
         # It does not partially process that row
         if len(amounts) != 3:
             return {}
-        
+
         # Find the preceding `SUMMARY` section
         # Search only the text before the selected Total for `SUMMARY`.
         # This prepares a second search area for percentage targets such as "10%"
-        summary_anchors = list(re.finditer(
-            r"\bSUMMARY\b",
-            text[:anchor.start()],
-            flags=re.IGNORECASE,
-        ))
+        summary_anchors = list(
+            re.finditer(
+                r"\bSUMMARY\b",
+                text[: anchor.start()],
+                flags=re.IGNORECASE,
+            )
+        )
 
         # Start with no percentage candidates.
         percentages = []
@@ -280,16 +287,16 @@ class OCRSummarySpan:
             #   * 7.5%
             #   * 7,5%
             # The decimal portion and whitespace before % are optional.
-            percentage_pattern = re.compile(
-                r"(?<![\w.,])\d+(?:[,.]\d+)?\s*%"
-            )
+            percentage_pattern = re.compile(r"(?<![\w.,])\d+(?:[,.]\d+)?\s*%")
 
             # Search between the last preceding `SUMMARY` and the selected `Total`.
-            percentages = list(percentage_pattern.finditer(
-                text,
-                summary_anchors[-1].end(),
-                anchor.start(),
-            ))
+            percentages = list(
+                percentage_pattern.finditer(
+                    text,
+                    summary_anchors[-1].end(),
+                    anchor.start(),
+                )
+            )
 
         result = {}
 
@@ -305,13 +312,11 @@ class OCRSummarySpan:
             #       field = "total"
             #       expected = "3004.96"
             # If subtotal or the field is absent, use "".
-            expected = str(
-                json_data.get("subtotal", {}).get(field, "")
-            ).strip()
+            expected = str(json_data.get("subtotal", {}).get(field, "")).strip()
 
             if not expected:
                 continue
-            
+
             # Determine whether this particular target is a percentage
             is_percentage = expected.endswith("%")
 
@@ -328,7 +333,7 @@ class OCRSummarySpan:
             # Skip a value that the number parser cannot interpret safely.
             if expected_number is None:
                 continue
-            
+
             # Choose monetary or percentage candidates
             #   For "273.18", use the three monetary amounts.
             #   For "10%", use percentage matches from the preceding summary section.
@@ -347,7 +352,8 @@ class OCRSummarySpan:
                 if self.normalizer.normalize_number(
                     candidate.group(),
                     percentage=is_percentage,
-                ) == expected_number
+                )
+                == expected_number
             ]
 
             # Require one unambiguous match
@@ -356,7 +362,7 @@ class OCRSummarySpan:
             # - The same expected number occurs in multiple candidate positions.
             if len(candidates) != 1:
                 continue
-            
+
             # The function doesn’t return a review record itself
             # the missing annotation is detected by your verification code.
             # For tax:
@@ -389,25 +395,25 @@ class OCRSummarySpan:
 
         return result
 
+
 @dataclass
 class OCRSpanMatcher:
     normalizer: Normalizer
     summary_span: OCRSummarySpan
     numeric: NumericField
 
-    def find_normalized_span(self, text: str, value: str, label: str) -> OCRSpanEntity | None:
+    def find_normalized_span(
+        self, text: str, value: str, label: str
+    ) -> OCRSpanEntity | None:
         normalized_text, offsets = self.normalizer.normalize_with_offsets(text)
         normalized_value, _ = self.normalizer.normalize_with_offsets(value)
 
-        if not normalized_value:
+        if not normalized_value or not normalized_text:
             return None
 
-        match = fuzz.partial_ratio_alignment(
-            normalized_value,
-            normalized_text
-        )
-        if not match:
-            return
+        match = fuzz.partial_ratio_alignment(normalized_value, normalized_text)
+        if not match or match.dest_start == match.dest_end:
+            return None
 
         start = offsets[match.dest_start]
         end = offsets[match.dest_end - 1] + 1
@@ -425,7 +431,9 @@ class OCRSpanMatcher:
             text=matched_ocr_text,
         )
 
-    def find_name_span(self, text: str, expected: str, label: str) -> OCRSpanEntity | None:
+    def find_name_span(
+        self, text: str, expected: str, label: str
+    ) -> OCRSpanEntity | None:
         """Accept exact names or ordered partial names with the first name word.
 
         Partial candidates must contain at least two expected words and no inserted
@@ -442,7 +450,7 @@ class OCRSpanMatcher:
                 needs_review=False,
                 score=exact.score,
                 match_status="exact",
-                expected=exact.expected
+                expected=exact.expected,
             )
 
         normalized_text, offsets = self.normalizer.normalize_with_offsets(text)
@@ -453,12 +461,20 @@ class OCRSpanMatcher:
         if match is None or match.dest_start == match.dest_end:
             return None
 
-        candidate_tokens = list(re.finditer(r"\S+", normalized_text[match.dest_start:match.dest_end]))
+        candidate_tokens = list(
+            re.finditer(r"\S+", normalized_text[match.dest_start : match.dest_end])
+        )
         expected_words = normalized_expected.split()
-        blocks = [block for block in SequenceMatcher(
-            None, expected_words, [token.group() for token in candidate_tokens],
-            autojunk=False,
-        ).get_matching_blocks() if block.size]
+        blocks = [
+            block
+            for block in SequenceMatcher(
+                None,
+                expected_words,
+                [token.group() for token in candidate_tokens],
+                autojunk=False,
+            ).get_matching_blocks()
+            if block.size
+        ]
 
         start = offsets[match.dest_start]
         end = offsets[match.dest_end - 1] + 1
@@ -467,9 +483,15 @@ class OCRSpanMatcher:
             first, last = blocks[0], blocks[-1]
             matched_words = sum(block.size for block in blocks)
             # Ignore unrelated words at the edges, but reject interior insertions.
-            if first.a == 0 and matched_words >= 2 and last.b + last.size - first.b == matched_words:
+            if (
+                first.a == 0
+                and matched_words >= 2
+                and last.b + last.size - first.b == matched_words
+            ):
                 left = match.dest_start + candidate_tokens[first.b].start()
-                right = match.dest_start + candidate_tokens[last.b + last.size - 1].end()
+                right = (
+                    match.dest_start + candidate_tokens[last.b + last.size - 1].end()
+                )
                 start, end = offsets[left], offsets[right - 1] + 1
                 partial = True
 
@@ -483,14 +505,11 @@ class OCRSpanMatcher:
             needs_review=not partial,
             match_status="partial" if partial else "candidate",
             expected=expected,
-            score=fuzz.ratio(normalized_expected, observed_normalized)
+            score=fuzz.ratio(normalized_expected, observed_normalized),
         )
 
     def find_description_spans(
-        self,
-        text: str,
-        description: str,
-        label: str
+        self, text: str, description: str, label: str
     ) -> tuple[list[OCRSpanEntity], list[str]]:
         """Find description lines within an item region.
 
@@ -504,23 +523,22 @@ class OCRSpanMatcher:
             norm_fragment, _ = self.normalizer.normalize_with_offsets(fragment)
             if not norm_fragment:
                 continue
-            match = fuzz.partial_ratio_alignment(
-                norm_fragment,
-                norm_text
-            )
+            match = fuzz.partial_ratio_alignment(norm_fragment, norm_text)
             if match is None or match.dest_start == match.dest_end:
                 unmatched.append(fragment)
                 continue
 
             start = offsets[match.dest_start]
-            end = offsets[match.dest_end-1] + 1
-            spans.append(OCRSpanEntity(
-                start= start,
-                end=end,
-                label=label,
-                text=text[start:end+1].strip(),
-                score=match.score,
-            ))
+            end = offsets[match.dest_end - 1] + 1
+            spans.append(
+                OCRSpanEntity(
+                    start=start,
+                    end=end,
+                    label=label,
+                    text=text[start:end],
+                    score=match.score,
+                )
+            )
 
         return spans, unmatched
 
@@ -529,10 +547,7 @@ class OCRSpanMatcher:
         stack = [(json_data, "")]
         search_from = {"quantity": 0, "total_price": 0}
         norm_text, offsets = self.normalizer.normalize_with_offsets(text)
-        summary_spans = self.summary_span.find(
-            text,
-            json_data
-        )
+        summary_spans = self.summary_span.find(text, json_data)
 
         while stack:
             current, path = stack.pop()
@@ -550,10 +565,13 @@ class OCRSpanMatcher:
 
             if not isinstance(current, str) or not current.strip():
                 continue
-            
+
             if "items" in path:
                 continue
-            if path in {InvoiceField.SUBTOTAL_TAX.value, InvoiceField.SUBTOTAL_TOTAL.value}:
+            if path in {
+                InvoiceField.SUBTOTAL_TAX.value,
+                InvoiceField.SUBTOTAL_TOTAL.value,
+            }:
                 entity = summary_spans.get(path)
                 if entity is not None:
                     entities.append(entity)
@@ -566,23 +584,27 @@ class OCRSpanMatcher:
 
             if "account_number" in path:
                 norm_value, _ = self.normalizer.normalize_with_offsets(current)
-                match = fuzz.partial_ratio_alignment(norm_value,norm_text)
-                if not match:
+                if not norm_value or not norm_text:
+                    continue
+                match = fuzz.partial_ratio_alignment(norm_value, norm_text)
+                if not match or match.dest_start == match.dest_end:
                     continue
                 start = offsets[match.dest_start]
-                end = offsets[match.dest_end-1] + 1
+                end = offsets[match.dest_end - 1] + 1
                 score = fuzz.ratio(
                     self.normalizer.normalize(current, path),
-                    self.normalizer.normalize(text[start:end], path)
+                    self.normalizer.normalize(text[start:end], path),
                 )
-                entities.append(OCRSpanEntity(
-                    start=start,
-                    end= end,
-                    label=path,
-                    text=text[start:end],
-                    needs_review=score < ACCOUNT_NUMBER_MIN_SCORE,
-                    score=score,
-                ))
+                entities.append(
+                    OCRSpanEntity(
+                        start=start,
+                        end=end,
+                        label=path,
+                        text=text[start:end],
+                        needs_review=score < ACCOUNT_NUMBER_MIN_SCORE,
+                        score=score,
+                    )
+                )
                 continue
 
             if self.numeric.is_numeric_field(path):
@@ -593,12 +615,14 @@ class OCRSpanMatcher:
                 if not match:
                     continue
                 start, end = match.span()
-                entities.append(OCRSpanEntity(
-                    start=start,
-                    end= end,
-                    label= path,
-                    text= text[start:end],
-                ))
+                entities.append(
+                    OCRSpanEntity(
+                        start=start,
+                        end=end,
+                        label=path,
+                        text=text[start:end],
+                    )
+                )
                 search_from[cursor_key] = end
 
                 continue
@@ -617,52 +641,58 @@ class OCRSpanMatcher:
                         entities.append(entity)
                         continue
                     norm_line, _ = self.normalizer.normalize_with_offsets(line)
-                    match = fuzz.partial_ratio_alignment(norm_line,norm_text)
+                    match = fuzz.partial_ratio_alignment(norm_line, norm_text)
                     if not match or match.dest_end <= match.dest_start:
                         continue
 
                     start = offsets[match.dest_start]
-                    end = offsets[match.dest_end-1] + 1
+                    end = offsets[match.dest_end - 1] + 1
                     house_number = re.match(r"\d+\b", line.strip())
                     if house_number:
                         number = house_number.group()
 
                         # Search within the fuzzy candidate, preserving original offsets.
                         candidate_text = text[start:end]
-                        anchor = re.search(rf"(?<!\w){re.escape(number)}(?!\w)", candidate_text)
+                        anchor = re.search(
+                            rf"(?<!\w){re.escape(number)}(?!\w)", candidate_text
+                        )
 
                         if anchor:
                             start += anchor.start()
 
                     matched_text = text[start:end]
-                    entities.append(OCRSpanEntity(
-                        start=start,
-                        end=end,
-                        label=path,
-                        text=matched_text,
-                    ))
+                    entities.append(
+                        OCRSpanEntity(
+                            start=start,
+                            end=end,
+                            label=path,
+                            text=matched_text,
+                        )
+                    )
                 continue
 
             norm_current, _ = self.normalizer.normalize_with_offsets(current)
-            match = fuzz.partial_ratio_alignment(norm_current,norm_text)
-            if not match:
+            if not norm_current or not norm_text:
+                continue
+            match = fuzz.partial_ratio_alignment(norm_current, norm_text)
+            if not match or match.dest_start == match.dest_end:
                 continue
             start = offsets[match.dest_start]
-            end = offsets[match.dest_end-1] + 1
-            needs_review = (
-                path.endswith("_name") or path.endswith("_number")
-            ) and (
-                self.normalizer.normalize(current, path) != 
-                self.normalizer.normalize(text[start:end], path)
+            end = offsets[match.dest_end - 1] + 1
+            needs_review = (path.endswith("_name") or path.endswith("_number")) and (
+                self.normalizer.normalize(current, path)
+                != self.normalizer.normalize(text[start:end], path)
             )
-            entities.append(OCRSpanEntity(
-                start=start,
-                end=end,
-                label=path,
-                text=text[start:end],
-                needs_review=needs_review,
-                score=match.score,
-            ))
+            entities.append(
+                OCRSpanEntity(
+                    start=start,
+                    end=end,
+                    label=path,
+                    text=text[start:end],
+                    needs_review=needs_review,
+                    score=match.score,
+                )
+            )
 
         entities.sort(key=lambda entity: entity.start)
 
@@ -764,7 +794,6 @@ class OCRSpanMatcher:
 #     }
 
 
-
 # def find_summary_spans(
 #     text: str,
 #     json_data: dict,
@@ -800,7 +829,7 @@ class OCRSpanMatcher:
 #     # Set the search boundary to at most 200 characters after the anchor.
 #     # min() prevents the boundary from exceeding the document length
 #     region_end = min(len(text), anchor.end() + lookahead)
-    
+
 #     # Define a complete monetary amount
 #     # The regex:
 #     #   * (?<![\w.,]) - The preceding character must not be a word character, comma or dot
@@ -836,12 +865,12 @@ class OCRSpanMatcher:
 #     ))
 
 #     # Require the expected three-amount structure.
-#     # If OCR loses an amount—or the 200-character region contains an 
+#     # If OCR loses an amount—or the 200-character region contains an
 #     # extra amount—the function returns {}
 #     # It does not partially process that row
 #     if len(amounts) != 3:
 #         return {}
-    
+
 #     # Find the preceding `SUMMARY` section
 #     # Search only the text before the selected Total for `SUMMARY`.
 #     # This prepares a second search area for percentage targets such as "10%"
@@ -893,7 +922,7 @@ class OCRSpanMatcher:
 
 #         if not expected:
 #             continue
-        
+
 #         # Determine whether this particular target is a percentage
 #         is_percentage = expected.endswith("%")
 
@@ -910,7 +939,7 @@ class OCRSpanMatcher:
 #         # Skip a value that the number parser cannot interpret safely.
 #         if expected_number is None:
 #             continue
-        
+
 #         # Choose monetary or percentage candidates
 #         #   For "273.18", use the three monetary amounts.
 #         #   For "10%", use percentage matches from the preceding summary section.
@@ -938,7 +967,7 @@ class OCRSpanMatcher:
 #         # - The same expected number occurs in multiple candidate positions.
 #         if len(candidates) != 1:
 #             continue
-        
+
 #         # The function doesn’t return a review record itself
 #         # the missing annotation is detected by your verification code.
 #         # For tax:
@@ -970,7 +999,7 @@ class OCRSpanMatcher:
 #         }
 
 #     return result
-    
+
 
 # def find_spans(text, json_data, prefix=""):
 #     entities = []
@@ -995,7 +1024,7 @@ class OCRSpanMatcher:
 
 #         if not isinstance(current, str) or not current.strip():
 #             continue
-        
+
 #         if "items" in path:
 #             continue
 #         if path in {"subtotal.tax", "subtotal.total"}:
@@ -1282,7 +1311,7 @@ class OCRSpanMatcher:
 #             issues.append({"field": key, "status": "missing", "expected": value,
 #                            "observed": None})
 #             continue
-        
+
 #         if is_numeric_field(key):
 #             is_percentage = unicodedata.normalize("NFKC", value).strip().endswith("%")
 #             expected_number = normalize_number(value, percentage=is_percentage)

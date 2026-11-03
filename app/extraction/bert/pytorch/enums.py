@@ -1,5 +1,6 @@
 from enum import StrEnum
 
+
 class InvoiceField(StrEnum):
     INVOICE_CLIENT_ADDRESS = "invoice.client_address"
     INVOICE_CLIENT_NAME = "invoice.client_name"
@@ -10,6 +11,7 @@ class InvoiceField(StrEnum):
     ACCOUNT_NUMBER = "payment_instructions.account_number"
     SUBTOTAL_TAX = "subtotal.tax"
     SUBTOTAL_TOTAL = "subtotal.total"
+
 
 class InvoiceBIOLabel(StrEnum):
     CLIENT_ADDRESS = "CLIENT_ADDRESS"
@@ -22,6 +24,7 @@ class InvoiceBIOLabel(StrEnum):
     TAX = "TAX"
     TOTAL = "TOTAL"
 
+
 FIELD_TO_ENTITY: dict[str, str] = {
     InvoiceField.INVOICE_CLIENT_ADDRESS.value: InvoiceBIOLabel.CLIENT_ADDRESS.value,
     InvoiceField.INVOICE_CLIENT_NAME.value: InvoiceBIOLabel.CLIENT_NAME.value,
@@ -31,5 +34,5 @@ FIELD_TO_ENTITY: dict[str, str] = {
     InvoiceField.INVOICE_DATE.value: InvoiceBIOLabel.INVOICE_DATE.value,
     InvoiceField.ACCOUNT_NUMBER.value: InvoiceBIOLabel.ACCOUNT_NUMBER.value,
     InvoiceField.SUBTOTAL_TAX.value: InvoiceBIOLabel.TAX.value,
-    InvoiceField.SUBTOTAL_TOTAL.value: InvoiceBIOLabel.TOTAL.value
+    InvoiceField.SUBTOTAL_TOTAL.value: InvoiceBIOLabel.TOTAL.value,
 }

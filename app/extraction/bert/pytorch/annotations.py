@@ -12,10 +12,12 @@ class OCRSpanEntity:
     match_status: str | None = None
     expected: str | None = None
 
+
 @dataclass
 class OCRSpanResult:
     text: str
     entities: list[OCRSpanEntity]
+
 
 @dataclass
 class OCRSummarySpanEntity:

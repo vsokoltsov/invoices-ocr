@@ -1,11 +1,11 @@
 from dataclasses import dataclass, field
+
 from app.extraction.bert.pytorch.enums import FIELD_TO_ENTITY
+
 
 @dataclass(frozen=True)
 class InvoiceLabelSchema:
-    field_to_entity: dict[str, str] = field(
-        default_factory=lambda: FIELD_TO_ENTITY
-    )
+    field_to_entity: dict[str, str] = field(default_factory=lambda: FIELD_TO_ENTITY)
 
     entity_to_field: dict[str, str] = field(init=False)
     labels: tuple[str, ...] = field(init=False)
@@ -21,15 +21,14 @@ class InvoiceLabelSchema:
             raise ValueError("Each field must have a unique entity name")
 
         if any(
-            not name or name != name.strip()
-            for name in (*mapping.keys(), *entities)
+            not name or name != name.strip() for name in (*mapping.keys(), *entities)
         ):
-            raise ValueError("Field paths and entity names must be non-empty and trimmed")
+            raise ValueError(
+                "Field paths and entity names must be non-empty and trimmed"
+            )
 
         labels = ("O",) + tuple(
-            f"{prefix}-{entity}"
-            for entity in entities
-            for prefix in ("B", "I")
+            f"{prefix}-{entity}" for entity in entities for prefix in ("B", "I")
         )
 
         object.__setattr__(self, "field_to_entity", mapping)

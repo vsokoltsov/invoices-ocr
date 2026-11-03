@@ -1,5 +1,6 @@
 from torch.utils.data import Dataset
 
+
 class InvoiceDataset(Dataset):
     """Convert OCR spans into BIO labels for consecutive token windows."""
 
@@ -16,9 +17,7 @@ class InvoiceDataset(Dataset):
                 stride=0,
             )
 
-            for window, offsets in enumerate(
-                encoded["offset_mapping"]
-            ):
+            for window, offsets in enumerate(encoded["offset_mapping"]):
                 labels = []
                 previous_entity = None
 
@@ -40,11 +39,8 @@ class InvoiceDataset(Dataset):
 
                     overlapping = [
                         (index, entity)
-                        for index, entity in enumerate(
-                            record["entities"]
-                        )
-                        if start < entity["end"]
-                        and end > entity["start"]
+                        for index, entity in enumerate(record["entities"])
+                        if start < entity["end"] and end > entity["start"]
                     ]
 
                     if not overlapping:
@@ -60,19 +56,12 @@ class InvoiceDataset(Dataset):
                     entity_index, entity = overlapping[0]
 
                     # Ignore tokens that cross annotation boundaries.
-                    if (
-                        start < entity["start"]
-                        or end > entity["end"]
-                    ):
+                    if start < entity["start"] or end > entity["end"]:
                         labels.append(-100)
                         previous_entity = None
                         continue
 
-                    prefix = (
-                        "I"
-                        if previous_entity == entity_index
-                        else "B"
-                    )
+                    prefix = "I" if previous_entity == entity_index else "B"
 
                     entity_type = field_to_entity[entity["label"]]
                     bio_label = f"{prefix}-{entity_type}"

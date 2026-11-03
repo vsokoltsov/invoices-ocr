@@ -1,26 +1,29 @@
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
+
 import pandas as pd
-import torch
 import structlog
+import torch
+from seqeval.metrics import (
+    classification_report,
+    f1_score,
+    precision_score,
+    recall_score,
+)
 from torch import nn
 from torch.utils.data import DataLoader
 from torchmetrics.classification import (
     MulticlassAccuracy,
     MulticlassF1Score,
 )
-from seqeval.metrics import (
-    precision_score,
-    recall_score,
-    f1_score,
-    classification_report,
-)
-from tqdm.notebook import tqdm
+from tqdm.auto import tqdm
 
 logger = structlog.get_logger()
+
 
 @dataclass
 class TrainResult:
     loss: float
+
 
 @dataclass
 class EvalResult:
@@ -30,7 +33,8 @@ class EvalResult:
     f1: float
     token_accuracy: float
     token_macro_f1: float
-    per_entity: str | float
+    per_entity: dict[str, dict[str, float]]
+
 
 @dataclass
 class OCRInvoiceTraining:
@@ -47,19 +51,21 @@ class OCRInvoiceTraining:
         if self.epochs < 1:
             raise ValueError("epochs must be positive.")
 
-
     def train_one_epoch(self, epoch: int) -> TrainResult:
         self.model.train()
 
         total_loss = 0.0
         total_tokens = 0
 
-        progress_bar = tqdm(self.train_loader, position=1, desc=f"Train epoch {epoch}", leave=False)
+        progress_bar = tqdm(
+            self.train_loader, position=1, desc=f"Train epoch {epoch}", leave=False
+        )
         for batch in progress_bar:
-            batch = {
-                key: value.to(self.device)
-                for key, value in batch.items()
-            }
+            batch = {key: value.to(self.device) for key, value in batch.items()}
+
+            valid_tokens = int((batch["labels"] != -100).sum().item())
+            if valid_tokens == 0:
+                continue
 
             self.optimizer.zero_grad(set_to_none=True)
 
@@ -73,15 +79,10 @@ class OCRInvoiceTraining:
             )
 
             loss.backward()
-            nn.utils.clip_grad_norm_(
-                self.model.parameters(),
-                max_norm=1.0
-            )
+            nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
             self.optimizer.step()
 
             # Weight the epoch loss by the number of supervised tokens.
-            valid_tokens = (batch["labels"] != -100).sum().item()
-
             total_loss += loss.item() * valid_tokens
             total_tokens += valid_tokens
 
@@ -113,17 +114,15 @@ class OCRInvoiceTraining:
         total_tokens = 0
 
         progress_bar = tqdm(
-            self.val_loader,
-            position=1,
-            desc=f"Eval epoch {epoch}", 
-            leave=False
+            self.val_loader, position=1, desc=f"Eval epoch {epoch}", leave=False
         )
         for batch in progress_bar:
-            batch = {
-                key: value.to(self.device)
-                for key, value in batch.items()
-            }
+            batch = {key: value.to(self.device) for key, value in batch.items()}
             targets = batch["labels"]
+            valid = targets != -100
+            valid_tokens = int(valid.sum().item())
+            if valid_tokens == 0:
+                continue
 
             logits = self.model(
                 input_ids=batch["input_ids"],
@@ -136,9 +135,6 @@ class OCRInvoiceTraining:
 
             predictions = logits.argmax(dim=-1)
 
-            valid = targets != -100
-            valid_tokens = valid.sum().item()
-
             accuracy.update(predictions[valid], targets[valid])
             macro_f1.update(predictions[valid], targets[valid])
 
@@ -149,17 +145,17 @@ class OCRInvoiceTraining:
                 predictions.cpu().tolist(),
                 targets.cpu().tolist(),
             ):
-                actual_sequences.append([
-                    self.id2label[target]
-                    for target in target_row
-                    if target != -100
-                ])
+                actual_sequences.append(
+                    [self.id2label[target] for target in target_row if target != -100]
+                )
 
-                predicted_sequences.append([
-                    self.id2label[predicted]
-                    for predicted, target in zip(predicted_row, target_row)
-                    if target != -100
-                ])
+                predicted_sequences.append(
+                    [
+                        self.id2label[predicted]
+                        for predicted, target in zip(predicted_row, target_row)
+                        if target != -100
+                    ]
+                )
 
         if total_tokens == 0:
             raise ValueError("Evaluation loader contains no supervised tokens.")
@@ -202,14 +198,10 @@ class OCRInvoiceTraining:
 
         progress_bar = tqdm(range(1, self.epochs + 1), position=0, leave=True)
         for epoch in progress_bar:
-            progress_bar.set_description(f"Train model {epoch}/{self.epochs+1}")
-            train_metrics = self.train_one_epoch(
-                epoch=epoch
-            )
+            progress_bar.set_description(f"Train model {epoch}/{self.epochs}")
+            train_metrics = self.train_one_epoch(epoch=epoch)
 
-            validation_metrics = self.eval_one_epoch(
-                epoch=epoch
-            )
+            validation_metrics = self.eval_one_epoch(epoch=epoch)
 
             epoch_metrics = {
                 "epoch": epoch,
