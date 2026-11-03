@@ -1,14 +1,15 @@
 from dataclasses import dataclass
-import httpx
-
-from tqdm import tqdm
 from pathlib import Path
 from zipfile import ZipFile
+
+import httpx
+from tqdm import tqdm
 
 KAGGLE_INVOICES_URL = (
     "https://www.kaggle.com/api/v1/datasets/download/"
     "osamahosamabdellatif/high-quality-invoice-images-for-ocr"
 )
+
 
 @dataclass(init=False)
 class InvoiceDatasetDownloader:
@@ -17,15 +18,15 @@ class InvoiceDatasetDownloader:
 
     def __init__(
         self,
-        destination: str | Path = "/invoices", 
-        archive_path: str | Path = "/invoices-ocr.zip"
+        destination: str | Path = "/invoices",
+        archive_path: str | Path = "/invoices-ocr.zip",
     ):
         self.destination = Path(destination).expanduser()
         self.archive_path = Path(archive_path).expanduser()
 
     def download(self) -> Path:
         """Reuse an existing archive or download it with progress reporting."""
-    
+
         if self.archive_path.is_file():
             return self.archive_path
 
@@ -54,9 +55,7 @@ class InvoiceDatasetDownloader:
                         unit_divisor=1024,
                     ) as progress,
                 ):
-                    for chunk in response.iter_bytes(
-                        chunk_size=1024 * 1024
-                    ):
+                    for chunk in response.iter_bytes(chunk_size=1024 * 1024):
                         file.write(chunk)
                         progress.update(len(chunk))
 
