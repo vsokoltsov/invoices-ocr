@@ -3,8 +3,8 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True, slots=True)
 class BertPytorchParams:
-    destination_path: str
-    archive_path: str
+    dataset_path: str
+    result_filename: str
     model_name: str
     max_length_tokens: int
     random_seed: int

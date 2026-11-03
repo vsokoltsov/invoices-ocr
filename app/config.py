@@ -4,6 +4,28 @@ from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+class KaggleInvoicesConfig(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_prefix="KAGGLE_INVOICES_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    DESTINATION_PATH: str = Field(
+        default="./data/raw/kaggle-invoices",
+        description="Directory for the extracted dataset archive.",
+    )
+    ARCHIVE_PATH: str = Field(
+        default="./data/raw/invoices-ocr.zip",
+        description="Dataset archive path; an existing archive is reused.",
+    )
+    OUTPUT_PATH: str = Field(
+        default="./data/raw/kaggle-invoices.csv",
+        description="Path for the prepared dataset CSV.",
+    )
+
+
 class BertPytorchConfig(BaseSettings):
     model_config = SettingsConfigDict(
         env_prefix="BERTPYTORCH_",
@@ -12,13 +34,13 @@ class BertPytorchConfig(BaseSettings):
         extra="ignore",
     )
 
-    DESTINATION_PATH: str = Field(
-        default="/invoices",
-        description="Destination path of dataset",
+    DATASET_PATH: str = Field(
+        default="./data/raw/kaggle-invoices.csv",
+        description="Existing prepared dataset CSV; training fails if it is missing.",
     )
-    ARCHIVE_PATH: str = Field(
-        default="/invoices-ocr.zip",
-        description="Dataset archive path",
+    RESULT_FILENAME: str = Field(
+        default="bert_training_pipeline",
+        description="Training-history filename or path; the extension is always .csv.",
     )
     MODEL_NAME: str = Field(
         default="google-bert/bert-base-uncased",
@@ -137,6 +159,7 @@ class Settings(BaseSettings):
     DEBUG_ARTIFACTS_PATH: str
     BERT: BertConfig = Field(default_factory=BertConfig)
     BERT_PYTORCH: BertPytorchConfig = Field(default_factory=BertPytorchConfig)
+    KAGGLE_INVOICES: KaggleInvoicesConfig = Field(default_factory=KaggleInvoicesConfig)
     RANDOM_SEED: int = 42
     DOCILE_TOKEN: str
 
