@@ -4,6 +4,48 @@ from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+class BertPytorchConfig(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_prefix="BERTPYTORCH_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    DESTINATION_PATH: str = Field(
+        default="/invoices",
+        description="Destination path of dataset",
+    )
+    ARCHIVE_PATH: str = Field(
+        default="/invoices-ocr.zip",
+        description="Dataset archive path",
+    )
+    MODEL_NAME: str = Field(
+        default="google-bert/bert-base-uncased",
+        description="Hugging Face checkpoint used to initialize the token-classification model.",
+    )
+    BATCH_SIZE: int = Field(
+        default=16,
+        description="Number of documents processed in one dataset-encoding batch.",
+    )
+    NUM_EPOCH: int = Field(
+        default=5,
+        description="Number of complete passes over the training dataset.",
+    )
+    MAX_LENGTH_TOKENS: int = Field(
+        default=512,
+        description="Maximum tokenized input length for each document window.",
+    )
+    LEARNING_RATE: float = Field(
+        default=2e-5,
+        description="Optimizer learning rate used during fine-tuning.",
+    )
+    WEIGHT_DECAY: float = Field(
+        default=0.01,
+        description="Optimizer weight-decay coefficient for regularization.",
+    )
+
+
 class BertConfig(BaseSettings):
     model_config = SettingsConfigDict(
         env_prefix="BERT_",
@@ -83,6 +125,7 @@ class BertConfig(BaseSettings):
         description="Worker processes used by the training data loader.",
     )
 
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -93,6 +136,7 @@ class Settings(BaseSettings):
     DATA_PATH: str
     DEBUG_ARTIFACTS_PATH: str
     BERT: BertConfig = Field(default_factory=BertConfig)
+    BERT_PYTORCH: BertPytorchConfig = Field(default_factory=BertPytorchConfig)
     RANDOM_SEED: int = 42
     DOCILE_TOKEN: str
 
