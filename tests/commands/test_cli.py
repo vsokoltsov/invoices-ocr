@@ -26,10 +26,10 @@ def test_pytorch_cli_maps_all_config_fields_to_pipeline(settings, monkeypatch):
         [
             "train",
             "bert-pytorch",
-            "--destination-path",
-            "downloaded",
-            "--archive-path",
-            "cache.zip",
+            "--dataset-path",
+            "prepared.csv",
+            "--result-filename",
+            "experiment",
             "--model-name",
             "offline-model",
             "--batch-size",
@@ -104,3 +104,60 @@ def test_main_dispatches_and_invalid_commands_fail(settings, monkeypatch):
     pipeline.run.assert_called_once()
     with pytest.raises(SystemExit):
         cli.build_parser(settings).parse_args(["train", "bert"])
+
+
+def test_training_rejects_removed_download_options(settings):
+    with pytest.raises(SystemExit):
+        cli.build_parser(settings).parse_args(
+            [
+                "train",
+                "bert-pytorch",
+                "--destination-path",
+                "downloaded",
+            ]
+        )
+
+
+def test_dataset_command_uses_dataset_config_defaults(settings):
+    args = cli.build_parser(settings).parse_args(
+        ["datasets", "download", "kaggle-invoices"]
+    )
+    assert args.DESTINATION_PATH == settings.KAGGLE_INVOICES.DESTINATION_PATH
+    assert args.ARCHIVE_PATH == settings.KAGGLE_INVOICES.ARCHIVE_PATH
+    assert args.OUTPUT_PATH == settings.KAGGLE_INVOICES.OUTPUT_PATH
+
+
+def test_missing_csv_fails_before_tokenizer_initialization(
+    settings, monkeypatch, tmp_path
+):
+    from app.extraction.bert.pytorch import pipeline
+
+    tokenizer_factory = Mock()
+    monkeypatch.setattr(pipeline.AutoTokenizer, "from_pretrained", tokenizer_factory)
+    monkeypatch.setattr(cli, "get_settings", lambda: settings)
+    missing = tmp_path / "missing.csv"
+    with pytest.raises(FileNotFoundError, match="Prepared dataset CSV not found"):
+        cli.main(["train", "bert-pytorch", "--dataset-path", str(missing)])
+    tokenizer_factory.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "filename,content,message",
+    [
+        ("dataset.txt", "ocred_text,json_data\n", "must be a CSV"),
+        ("dataset.csv", "wrong_column\nvalue\n", "missing columns"),
+    ],
+)
+def test_invalid_dataset_fails_before_model_loading(
+    settings, monkeypatch, tmp_path, filename, content, message
+):
+    from app.extraction.bert.pytorch import pipeline
+
+    tokenizer_factory = Mock()
+    monkeypatch.setattr(pipeline.AutoTokenizer, "from_pretrained", tokenizer_factory)
+    monkeypatch.setattr(cli, "get_settings", lambda: settings)
+    dataset = tmp_path / filename
+    dataset.write_text(content, encoding="utf-8")
+    with pytest.raises(ValueError, match=message):
+        cli.main(["train", "bert-pytorch", "--dataset-path", str(dataset)])
+    tokenizer_factory.assert_not_called()
