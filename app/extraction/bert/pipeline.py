@@ -16,7 +16,7 @@ from transformers import (
     set_seed,
 )
 
-from app.aggregates.bert import BertTrainingParams
+from app.aggregates.bert.params import BertTrainingParams
 from app.extraction.bert.alignment import DocumentAligner, FinancialSummaryAligner
 from app.extraction.bert.candidates import CandidatesSelector
 from app.extraction.bert.dataset import HuggingFaceDatasetBuilder
