@@ -2,6 +2,19 @@ from dataclasses import dataclass
 
 
 @dataclass(frozen=True, slots=True)
+class BertPytorchParams:
+    destination_path: str
+    archive_path: str
+    model_name: str
+    max_length_tokens: int
+    random_seed: int
+    batch_size: int
+    num_epoch: int
+    learning_rate: float
+    weight_decay: float
+
+
+@dataclass(frozen=True, slots=True)
 class BertTrainingParams:
     """Resolved parameters for one BERT training run."""
 
