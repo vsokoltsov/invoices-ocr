@@ -1,39 +1,40 @@
 import argparse
 from collections.abc import Sequence
 
-from app.aggregates.bert import BertTrainingParams
-from app.config import BertConfig, Settings, get_settings
+from app.aggregates.bert.params import BertPytorchParams, BertTrainingParams
+from app.config import BertConfig, BertPytorchConfig, Settings, get_settings
 from app.extraction.bert.pipeline import BertTrainingPipeline
+from app.extraction.bert.pytorch.pipeline import BertPytorchPipeline
 
 
 def option_name(field_name: str) -> str:
     return "--" + field_name.lower().replace("_", "-")
 
+
 def add_bert_options(
     parser: argparse.ArgumentParser,
-    config: BertConfig,
+    config: BertConfig | BertPytorchConfig,
 ) -> None:
-    for name, field in BertConfig.model_fields.items():
+    for name, field in type(config).model_fields.items():
         default = getattr(config, name)
-        argument_options = {
-            "help": field.description,
-            "default": default,
-            "metavar": option_name(name).removeprefix("--"),
-        }
         if isinstance(default, bool):
             parser.add_argument(
                 option_name(name),
                 dest=name,
                 action=argparse.BooleanOptionalAction,
-                **argument_options,
+                help=field.description,
+                default=default,
             )
         else:
             parser.add_argument(
                 option_name(name),
                 dest=name,
                 type=type(default),
-                **argument_options,
+                help=field.description,
+                default=default,
+                metavar=option_name(name).removeprefix("--"),
             )
+
 
 def train_bert(
     args: argparse.Namespace,
@@ -64,14 +65,30 @@ def train_bert(
     )
     BertTrainingPipeline(params=params).run()
 
+
+def train_bert_pytorch(args: argparse.Namespace, settings: Settings) -> None:
+    params = BertPytorchParams(
+        destination_path=args.DESTINATION_PATH,
+        archive_path=args.ARCHIVE_PATH,
+        random_seed=args.random_seed,
+        model_name=args.MODEL_NAME,
+        max_length_tokens=args.MAX_LENGTH_TOKENS,
+        batch_size=args.BATCH_SIZE,
+        num_epoch=args.NUM_EPOCH,
+        learning_rate=args.LEARNING_RATE,
+        weight_decay=args.WEIGHT_DECAY,
+    )
+    BertPytorchPipeline().run(params)
+
+
 def build_parser(settings: Settings) -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="python -m commands.cli")
     commands = parser.add_subparsers(dest="command", required=True)
     train = commands.add_parser("train", help="Train a model")
     models = train.add_subparsers(dest="model", required=True)
     bert = models.add_parser(
-        "bert",
-        help="Train the BERT token classifier",
+        "bert-transformers",
+        help="Train BERT with the Transformers Trainer",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     bert.add_argument("--data-path", default=settings.DATA_PATH)
@@ -86,7 +103,17 @@ def build_parser(settings: Settings) -> argparse.ArgumentParser:
     )
     add_bert_options(bert, settings.BERT)
     bert.set_defaults(handler=train_bert)
+
+    pytorch = models.add_parser(
+        "bert-pytorch",
+        help="Train BERT with a plain PyTorch training loop",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    pytorch.add_argument("--random-seed", type=int, default=settings.RANDOM_SEED)
+    add_bert_options(pytorch, settings.BERT_PYTORCH)
+    pytorch.set_defaults(handler=train_bert_pytorch)
     return parser
+
 
 def main(argv: Sequence[str] | None = None):
     settings = get_settings()
@@ -94,6 +121,5 @@ def main(argv: Sequence[str] | None = None):
     args.handler(args, settings)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
-
