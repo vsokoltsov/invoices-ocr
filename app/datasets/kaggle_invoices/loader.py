@@ -21,7 +21,7 @@ class InvoiceDatasetLoader:
                 print(f"Skipping: image directory not found for {csv_path}")
                 continue
 
-            df_part = pd.read_csv(csv_path)
+            df_part = pd.read_csv(csv_path, keep_default_na=False)
 
             if "File Name" not in df_part.columns:
                 print(f"Skipping: 'File Name' column not found in {csv_path}")
