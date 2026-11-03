@@ -1,0 +1,117 @@
+import math
+
+import pytest
+import torch
+from torch import nn
+from torch.utils.data import DataLoader, Dataset
+
+from app.extraction.bert.pytorch.training import (
+    EvalResult,
+    OCRInvoiceTraining,
+    TrainResult,
+)
+
+
+class TinyTagger(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.embedding = nn.Embedding(3, 3)
+        with torch.no_grad():
+            self.embedding.weight.copy_(torch.eye(3) * 5)
+
+    def forward(self, input_ids, attention_mask):  # ty: ignore[invalid-mutable-override]
+        return self.embedding(input_ids)
+
+
+class BatchDataset(Dataset):
+    def __init__(self, rows):
+        self.rows = rows
+
+    def __getitem__(self, index):
+        return self.rows[index]
+
+    def __len__(self):
+        return len(self.rows)
+
+
+def make_trainer(labels=(1, 2, -100), epochs=1):
+    model = TinyTagger()
+    loader = DataLoader(
+        BatchDataset(
+            [
+                {
+                    "input_ids": torch.tensor([1, 2, 0]),
+                    "attention_mask": torch.ones(3, dtype=torch.long),
+                    "labels": torch.tensor(labels),
+                }
+            ]
+        ),
+        batch_size=1,
+    )
+    return OCRInvoiceTraining(
+        model=model,
+        optimizer=torch.optim.SGD(model.parameters(), lr=0.1),
+        criterion=nn.CrossEntropyLoss(ignore_index=-100),
+        train_loader=loader,
+        val_loader=loader,
+        device=torch.device("cpu"),
+        epochs=epochs,
+        id2label={0: "O", 1: "B-NAME", 2: "I-NAME"},
+    )
+
+
+def test_training_updates_weights_and_evaluation_reports_bio_metrics():
+    trainer = make_trainer()
+    before = trainer.model.embedding.weight.detach().clone()
+    training = trainer.train_one_epoch(1)
+    assert math.isfinite(training.loss)
+    assert not torch.equal(before, trainer.model.embedding.weight)
+    result = trainer.eval_one_epoch(1)
+    assert result.f1 == result.precision == result.recall == 1.0
+    assert result.token_accuracy == 1.0
+    assert result.per_entity["NAME"]["support"] == 1
+    assert not trainer.model.training
+    assert math.isfinite(result.loss)
+
+
+@pytest.mark.parametrize("method", ["train_one_epoch", "eval_one_epoch"])
+def test_empty_supervision_raises_without_changing_weights(method):
+    trainer = make_trainer(labels=(-100, -100, -100))
+    before = trainer.model.embedding.weight.detach().clone()
+    with pytest.raises(ValueError, match="no supervised tokens"):
+        getattr(trainer, method)(1)
+    assert torch.equal(before, trainer.model.embedding.weight)
+
+
+def test_all_masked_batch_is_skipped_when_other_batches_have_labels():
+    trainer = make_trainer()
+    supervised = trainer.train_loader.dataset[0]
+    masked = {**supervised, "labels": torch.full((3,), -100)}
+    loader = DataLoader(BatchDataset([masked, supervised]), batch_size=1)
+    trainer.train_loader = trainer.val_loader = loader
+    assert math.isfinite(trainer.train_one_epoch(1).loss)
+    assert trainer.eval_one_epoch(1).f1 == 1.0
+
+
+def test_train_restores_best_checkpoint_and_returns_scalar_history(monkeypatch):
+    trainer = make_trainer(epochs=2)
+
+    def train_epoch(epoch):
+        with torch.no_grad():
+            trainer.model.embedding.weight.fill_(epoch)
+        return TrainResult(loss=1.0 / epoch)
+
+    def evaluate(epoch):
+        return EvalResult(0.1, 0.9, 0.9, 0.9 if epoch == 1 else 0.5, 1.0, 1.0, {})
+
+    monkeypatch.setattr(trainer, "train_one_epoch", train_epoch)
+    monkeypatch.setattr(trainer, "eval_one_epoch", evaluate)
+    history = trainer.train()
+    assert history["validation_f1"].tolist() == [0.9, 0.5]
+    assert "validation_per_entity" not in history
+    assert torch.all(trainer.model.embedding.weight == 1)
+
+
+def test_training_rejects_nonpositive_epoch_count():
+    with pytest.raises(ValueError, match="epochs must be positive"):
+        make_trainer(epochs=0)
