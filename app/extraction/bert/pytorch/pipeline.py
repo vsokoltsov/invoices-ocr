@@ -1,7 +1,9 @@
 import random
 from dataclasses import dataclass
+from pathlib import Path
 
 import numpy as np
+import pandas as pd
 import structlog
 import torch
 from sklearn.model_selection import train_test_split
@@ -10,8 +12,6 @@ from torch.utils.data import DataLoader
 from transformers import AutoTokenizer, DataCollatorForTokenClassification, set_seed
 
 from app.aggregates.bert.params import BertPytorchParams
-from app.datasets.kaggle_invoices.downloader import InvoiceDatasetDownloader
-from app.datasets.kaggle_invoices.loader import InvoiceDatasetLoader
 from app.extraction.bert.pytorch.builder import InvoiceRecordBuilder
 from app.extraction.bert.pytorch.datasets import InvoiceDataset
 from app.extraction.bert.pytorch.model import BertFieldExtractor
@@ -31,6 +31,23 @@ logger = structlog.get_logger()
 class BertPytorchPipeline:
     def run(self, params: BertPytorchParams):
         """Train on accepted invoices and evaluate the best weights on held-out data."""
+        dataset_path = Path(params.dataset_path).expanduser().resolve()
+        if not dataset_path.is_file():
+            raise FileNotFoundError(f"Prepared dataset CSV not found: {dataset_path}")
+        if dataset_path.suffix.lower() != ".csv":
+            raise ValueError(f"Prepared dataset must be a CSV file: {dataset_path}")
+
+        df = pd.read_csv(
+            dataset_path,
+            keep_default_na=False,
+            dtype={"ocred_text": str, "json_data": str},
+        )
+        missing_columns = {"ocred_text", "json_data"} - set(df.columns)
+        if missing_columns:
+            raise ValueError(
+                f"Dataset CSV is missing columns: {sorted(missing_columns)}"
+            )
+
         random.seed(params.random_seed)
         np.random.seed(params.random_seed)
         torch.manual_seed(params.random_seed)
@@ -70,14 +87,7 @@ class BertPytorchPipeline:
             normalizer=normalizer,
         )
         label_schema = InvoiceLabelSchema()
-        downloader = InvoiceDatasetDownloader(
-            destination=params.destination_path,
-            archive_path=params.archive_path,
-        )
-        logger.info("1. Load kaggle invoices dataset")
-        invoices_path = downloader.download_and_extract()
-        df = InvoiceDatasetLoader(invoices_path).load()
-        logger.info("2. Prepare dataset")
+        logger.info("Prepare training spans", dataset_path=str(dataset_path))
         records, rejected = builder.build(df)
         logger.info(
             "bert_pytorch_records", accepted=len(records), rejected=len(rejected)
@@ -162,7 +172,12 @@ class BertPytorchPipeline:
         )
         logger.info("6. Start training")
         history_df = trainer.train()
-        history_df.to_csv("bert_training_colab.csv", index=False)
+        result_path = (
+            Path(params.result_filename).expanduser().with_suffix(".csv").resolve()
+        )
+        result_path.parent.mkdir(parents=True, exist_ok=True)
+        history_df.to_csv(result_path, index=False)
+        logger.info("Saved training history", path=str(result_path))
         trainer.val_loader = test_loader
         logger.info("7. Verify results on test loader")
         test_metrics = trainer.eval_one_epoch(epoch=params.num_epoch)
