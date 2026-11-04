@@ -4,6 +4,29 @@ from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+class DocileInvoicesConfig(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_prefix="DOCILE_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+    TOKEN: str =  Field(
+        description="Token for retrieving docile archive",
+    )
+    DESTINATION_PATH: str = Field(
+        default="./data/raw/kaggle-invoices",
+        description="Directory for the extracted dataset archive.",
+    )
+    ARCHIVE_PATH: str = Field(
+        default="./data/raw/invoices-ocr.zip",
+        description="Dataset archive path; an existing archive is reused.",
+    )
+    OUTPUT_PATH: str = Field(
+        default="./data/raw/kaggle-invoices.csv",
+        description="Path for the prepared dataset CSV.",
+    )
+
 class KaggleInvoicesConfig(BaseSettings):
     model_config = SettingsConfigDict(
         env_prefix="KAGGLE_INVOICES_",
@@ -24,6 +47,7 @@ class KaggleInvoicesConfig(BaseSettings):
         default="./data/raw/kaggle-invoices.csv",
         description="Path for the prepared dataset CSV.",
     )
+    
 
 
 class BertPytorchConfig(BaseSettings):
@@ -160,6 +184,7 @@ class Settings(BaseSettings):
     BERT: BertConfig = Field(default_factory=BertConfig)
     BERT_PYTORCH: BertPytorchConfig = Field(default_factory=BertPytorchConfig)
     KAGGLE_INVOICES: KaggleInvoicesConfig = Field(default_factory=KaggleInvoicesConfig)
+    DOCILE: DocileInvoicesConfig = Field(default_factory=DocileInvoicesConfig)
     RANDOM_SEED: int = 42
     DOCILE_TOKEN: str
 
