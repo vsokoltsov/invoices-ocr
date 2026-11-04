@@ -1,5 +1,10 @@
+from enum import StrEnum
 from dataclasses import dataclass
 
+
+class DatasetName(StrEnum):
+    KAGGLE_INVOICES = "kaggle_invoices"
+    DOCILE = "docile"
 
 @dataclass(frozen=True, slots=True)
 class BertPytorchParams:
