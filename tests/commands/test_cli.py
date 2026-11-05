@@ -3,7 +3,13 @@ from unittest.mock import Mock
 import pytest
 
 from app.aggregates.bert.params import DatasetName
-from app.config import BertConfig, BertPytorchConfig, DocileInvoicesConfig, Settings
+from app.config import (
+    BertConfig,
+    BertPytorchConfig,
+    BertPytorchDebugConfig,
+    DocileInvoicesConfig,
+    Settings,
+)
 from app.datasets.docile.enums import DocileSplit
 from commands import cli
 
@@ -85,6 +91,23 @@ def test_cli_uses_pytorch_configuration_defaults(settings):
     args = cli.build_parser(settings).parse_args(["train", "bert-pytorch"])
     for name in BertPytorchConfig.model_fields:
         assert getattr(args, name) == getattr(settings.BERT_PYTORCH, name)
+
+
+def test_debug_cli_maps_config_and_environment(settings, monkeypatch, tmp_path, capsys):
+    monkeypatch.setenv("BERT_PYTORCH_DEBUG_OUTPUT_DIR", str(tmp_path / "debug"))
+    settings.BERT_PYTORCH_DEBUG = BertPytorchDebugConfig(_env_file=None)
+    pipeline = Mock()
+    pipeline.run.return_value = tmp_path / "comparison.csv"
+    monkeypatch.setattr(cli, "BertPytorchDebugPipeline", lambda: pipeline)
+    args = cli.build_parser(settings).parse_args(
+        ["debug", "bert-pytorch", "--checkpoint-dir", "saved-model", "--device", "cpu"]
+    )
+    args.handler(args, settings)
+    params = pipeline.run.call_args.args[0]
+    assert params.checkpoint_dir == "saved-model"
+    assert params.output_dir == str(tmp_path / "debug")
+    assert params.device == "cpu"
+    assert capsys.readouterr().out.strip() == str(pipeline.run.return_value)
 
 
 def test_pytorch_environment_defaults_are_exposed(monkeypatch, settings):

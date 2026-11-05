@@ -219,3 +219,41 @@ def test_docile_cli_download_and_training_use_shared_dataset(
         tmp_path / "data/interim/bert_diagnostics/epoch_001/per_entity.csv"
     ).is_file()
     download.assert_not_called()
+    checkpoint = tmp_path / "data/interim/bert_pytorch_checkpoint"
+    assert (checkpoint / "model.pt").is_file()
+    snapshot = json.loads((checkpoint / "validation.json").read_text())
+    assert snapshot["epoch"] == 1
+    assert snapshot["max_length"] == 32
+    assert snapshot["records"][0]["text_with_boxes"]
+    # Debug must use saved inputs, with no access to the original dataset.
+    output.unlink()
+    debug_dir = tmp_path / "comparison"
+    cli.main(
+        [
+            "debug",
+            "bert-pytorch",
+            "--checkpoint-dir",
+            str(checkpoint),
+            "--output-dir",
+            str(debug_dir),
+            "--device",
+            "cpu",
+        ]
+    )
+    comparison = pd.read_csv(debug_dir / "decoder_comparison.csv")
+    assert set(comparison["decoder"]) == {"token_argmax", "ocr_word"}
+    original = pd.read_csv(
+        tmp_path / "data/interim/bert_diagnostics/epoch_001/per_entity.csv"
+    )
+    baseline = comparison.loc[comparison.decoder.eq("token_argmax")].reset_index(
+        drop=True
+    )
+    pd.testing.assert_frame_equal(baseline[original.columns], original)
+    for decoder in ("token_argmax", "ocr_word"):
+        for filename in (
+            "per_entity.csv",
+            "entity_errors.csv",
+            "false_positive.csv",
+            "false_negative.csv",
+        ):
+            assert (debug_dir / decoder / filename).is_file()

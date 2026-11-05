@@ -20,6 +20,14 @@ class BertPytorchParams:
     weight_decay: float
     dataset_type: DatasetName = DatasetName.KAGGLE_INVOICES
     diagnostic_dir: str | None = "./data/interim/bert_diagnostics"
+    checkpoint_dir: str = "./data/interim/bert_pytorch_checkpoint"
+
+
+@dataclass(frozen=True, slots=True)
+class BertPytorchDebugParams:
+    checkpoint_dir: str
+    output_dir: str
+    device: str = "auto"
 
 
 @dataclass(frozen=True, slots=True)

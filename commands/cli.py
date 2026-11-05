@@ -4,6 +4,7 @@ from enum import StrEnum
 from pathlib import Path
 
 from app.aggregates.bert.params import (
+    BertPytorchDebugParams,
     BertPytorchParams,
     BertTrainingParams,
     DatasetName,
@@ -11,6 +12,7 @@ from app.aggregates.bert.params import (
 from app.config import (
     BertConfig,
     BertPytorchConfig,
+    BertPytorchDebugConfig,
     DocileInvoicesConfig,
     KaggleInvoicesConfig,
     Settings,
@@ -21,6 +23,7 @@ from app.datasets.docile.preparation import DocileInvoicesPreparation
 from app.datasets.kaggle_invoices.downloader import InvoiceDatasetDownloader
 from app.datasets.kaggle_invoices.preparation import KaggleInvoicesPreparation
 from app.extraction.bert.pipeline import BertTrainingPipeline
+from app.extraction.bert.pytorch.debug import BertPytorchDebugPipeline
 from app.extraction.bert.pytorch.pipeline import BertPytorchPipeline
 
 
@@ -32,6 +35,7 @@ def add_config_options(
     parser: argparse.ArgumentParser,
     config: BertConfig
     | BertPytorchConfig
+    | BertPytorchDebugConfig
     | KaggleInvoicesConfig
     | DocileInvoicesConfig,
     *,
@@ -104,8 +108,20 @@ def train_bert_pytorch(args: argparse.Namespace, settings: Settings) -> None:
         weight_decay=args.WEIGHT_DECAY,
         dataset_type=DatasetName(args.dataset_name),
         diagnostic_dir=args.DIAGNOSTIC_DIR,
+        checkpoint_dir=args.CHECKPOINT_DIR,
     )
     BertPytorchPipeline().run(params)
+
+
+def debug_bert_pytorch(args: argparse.Namespace, settings: Settings) -> None:
+    path = BertPytorchDebugPipeline().run(
+        BertPytorchDebugParams(
+            checkpoint_dir=args.CHECKPOINT_DIR,
+            output_dir=args.OUTPUT_DIR,
+            device=args.DEVICE,
+        )
+    )
+    print(path)
 
 
 def download_kaggle_invoices(args: argparse.Namespace, settings: Settings) -> None:
@@ -175,6 +191,16 @@ def build_parser(settings: Settings) -> argparse.ArgumentParser:
     )
     add_config_options(pytorch, settings.BERT_PYTORCH)
     pytorch.set_defaults(handler=train_bert_pytorch)
+
+    debug = commands.add_parser("debug", help="Inspect saved model predictions")
+    debug_models = debug.add_subparsers(dest="model", required=True)
+    debug_pytorch = debug_models.add_parser(
+        "bert-pytorch",
+        help="Compare token and OCR-word decoders without training",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    add_config_options(debug_pytorch, settings.BERT_PYTORCH_DEBUG)
+    debug_pytorch.set_defaults(handler=debug_bert_pytorch)
 
     datasets = commands.add_parser("datasets", help="Download and prepare datasets")
     dataset_commands = datasets.add_subparsers(dest="dataset_command", required=True)
