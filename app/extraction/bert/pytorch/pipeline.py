@@ -14,6 +14,7 @@ from transformers import AutoTokenizer, DataCollatorForTokenClassification, set_
 
 from app.aggregates.bert.params import BertPytorchParams, DatasetName
 from app.extraction.bert.pytorch.builder import InvoiceRecordBuilder
+from app.extraction.bert.pytorch.checkpoint import BertPytorchCheckpoint
 from app.extraction.bert.pytorch.datasets import InvoiceDataset
 from app.extraction.bert.pytorch.docile.builder import DocileRecordBuilder
 from app.extraction.bert.pytorch.enums import InvoiceBIOLabel, InvoiceField
@@ -268,6 +269,20 @@ class BertPytorchPipeline:
         )
         logger.info("6. Start training")
         history_df = trainer.train()
+        checkpoint_dir = Path(params.checkpoint_dir).expanduser().resolve()
+        best_epoch = history_df.loc[history_df["validation_f1"].idxmax(), "epoch"]
+        BertPytorchCheckpoint(checkpoint_dir).save(
+            model,
+            tokenizer,
+            label_schema,
+            validation_records,
+            df,
+            epoch=best_epoch,
+            max_length=params.max_length_tokens,
+        )
+        logger.info(
+            "Saved best checkpoint and validation inputs", path=str(checkpoint_dir)
+        )
         result_path = (
             Path(params.result_filename).expanduser().with_suffix(".csv").resolve()
         )

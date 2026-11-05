@@ -9,6 +9,7 @@ from seqeval.metrics.sequence_labeling import get_entities
 from transformers import PreTrainedTokenizerBase
 
 from app.extraction.bert.pytorch.datasets import InvoiceDataset
+from app.extraction.bert.pytorch.decoding import OCRWordDecoder
 from app.extraction.bert.pytorch.schema import InvoiceLabelSchema
 
 
@@ -19,6 +20,7 @@ class EntityErrorInspector:
     label_schema: InvoiceLabelSchema
     device: torch.device
     max_length: int = 512
+    word_decoder: OCRWordDecoder | None = None
 
     def _encode_record(self, record):
         dataset = InvoiceDataset(
@@ -85,6 +87,12 @@ class EntityErrorInspector:
 
                 logits = self.model(**inputs)
                 predictions = logits.argmax(dim=-1)[0].cpu().tolist()
+                if self.word_decoder is not None:
+                    predictions = self.word_decoder.decode(
+                        logits[0],
+                        record_offsets[window_index],
+                        record["text_with_boxes"],
+                    )
                 # Apply exactly the same -100 mask as eval_one_epoch().
                 valid_indices = [
                     index

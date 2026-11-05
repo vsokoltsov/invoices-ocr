@@ -3,10 +3,14 @@ from transformers import AutoModel
 
 
 class BertFieldExtractor(nn.Module):
-    def __init__(self, model_name, num_labels):
+    def __init__(self, model_name, num_labels, encoder=None):
         super().__init__()
 
-        self.bert = AutoModel.from_pretrained(pretrained_model_name_or_path=model_name)
+        self.bert = (
+            encoder
+            if encoder is not None
+            else AutoModel.from_pretrained(pretrained_model_name_or_path=model_name)
+        )
         self.classifier = nn.Linear(
             in_features=self.bert.config.hidden_size,
             out_features=num_labels,

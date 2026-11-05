@@ -88,6 +88,10 @@ class BertPytorchConfig(BaseSettings):
         default="./data/interim/bert_diagnostics",
         description="Directory for per-epoch validation diagnostics; an empty value disables inspection.",
     )
+    CHECKPOINT_DIR: str = Field(
+        default="./data/interim/bert_pytorch_checkpoint",
+        description="Directory for best weights, tokenizer, schema, and validation inputs.",
+    )
     MODEL_NAME: str = Field(
         default="google-bert/bert-base-uncased",
         description="Hugging Face checkpoint used to initialize the token-classification model.",
@@ -111,6 +115,24 @@ class BertPytorchConfig(BaseSettings):
     WEIGHT_DECAY: float = Field(
         default=0.01,
         description="Optimizer weight-decay coefficient for regularization.",
+    )
+
+
+class BertPytorchDebugConfig(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_prefix="BERT_PYTORCH_DEBUG_", env_file=".env", extra="ignore"
+    )
+
+    CHECKPOINT_DIR: str = Field(
+        default="./data/interim/bert_pytorch_checkpoint",
+        description="Saved PyTorch training checkpoint and validation inputs.",
+    )
+    OUTPUT_DIR: str = Field(
+        default="./data/interim/bert_decoder_debug",
+        description="Output directory for decoder metrics and entity errors.",
+    )
+    DEVICE: str = Field(
+        default="auto", description="Inference device: auto, cpu, cuda, or mps."
     )
 
 
@@ -205,6 +227,9 @@ class Settings(BaseSettings):
     DEBUG_ARTIFACTS_PATH: str
     BERT: BertConfig = Field(default_factory=BertConfig)
     BERT_PYTORCH: BertPytorchConfig = Field(default_factory=BertPytorchConfig)
+    BERT_PYTORCH_DEBUG: BertPytorchDebugConfig = Field(
+        default_factory=BertPytorchDebugConfig
+    )
     KAGGLE_INVOICES: KaggleInvoicesConfig = Field(default_factory=KaggleInvoicesConfig)
     DOCILE: DocileInvoicesConfig = Field(default_factory=DocileInvoicesConfig)
     RANDOM_SEED: int = 42
