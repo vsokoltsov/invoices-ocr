@@ -2,7 +2,9 @@ from unittest.mock import Mock
 
 import pytest
 
+from app.aggregates.bert.params import DatasetName
 from app.config import BertConfig, BertPytorchConfig, Settings
+from app.datasets.docile.enums import DocileSplit
 from commands import cli
 
 
@@ -26,6 +28,8 @@ def test_pytorch_cli_maps_all_config_fields_to_pipeline(settings, monkeypatch):
         [
             "train",
             "bert-pytorch",
+            "--dataset-name",
+            "docile",
             "--dataset-path",
             "prepared.csv",
             "--result-filename",
@@ -49,6 +53,7 @@ def test_pytorch_cli_maps_all_config_fields_to_pipeline(settings, monkeypatch):
     args.handler(args, settings)
     params = pipeline.run.call_args.args[0]
     assert params.random_seed == 7
+    assert params.dataset_type == DatasetName.DOCILE
     for name in BertPytorchConfig.model_fields:
         assert getattr(params, name.lower()) == getattr(args, name)
 
@@ -127,6 +132,14 @@ def test_dataset_command_uses_dataset_config_defaults(settings):
     assert args.OUTPUT_PATH == settings.KAGGLE_INVOICES.OUTPUT_PATH
 
 
+def test_docile_split_cli_uses_enum_and_rejects_invalid_values(settings):
+    parser = cli.build_parser(settings)
+    args = parser.parse_args(["datasets", "download", "docile", "--split", "test"])
+    assert args.SPLIT is DocileSplit.TEST
+    with pytest.raises(SystemExit):
+        parser.parse_args(["datasets", "download", "docile", "--split", "unknown"])
+
+
 def test_missing_csv_fails_before_tokenizer_initialization(
     settings, monkeypatch, tmp_path
 ):
@@ -161,3 +174,32 @@ def test_invalid_dataset_fails_before_model_loading(
     with pytest.raises(ValueError, match=message):
         cli.main(["train", "bert-pytorch", "--dataset-path", str(dataset)])
     tokenizer_factory.assert_not_called()
+
+
+def test_dataset_selection_config_and_token_privacy(tmp_path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("DATASET_NAME", "docile")
+    monkeypatch.setenv("DOCILE_TOKEN", "private-token")
+    settings = Settings(
+        _env_file=None, DATA_PATH="unused", DEBUG_ARTIFACTS_PATH="unused"
+    )
+    args = cli.build_parser(settings).parse_args(["train", "bert-pytorch"])
+    assert args.dataset_name == DatasetName.DOCILE
+    assert settings.DOCILE.TOKEN == "private-token"
+    with pytest.raises(SystemExit) as result:
+        cli.build_parser(settings).parse_args(
+            ["datasets", "download", "docile", "--help"]
+        )
+    assert result.value.code == 0
+    assert "private-token" not in capsys.readouterr().out
+    with pytest.raises(SystemExit):
+        cli.build_parser(settings).parse_args(
+            ["train", "bert-pytorch", "--dataset-name", "unknown"]
+        )
+    monkeypatch.delenv("DOCILE_TOKEN")
+    assert (
+        Settings(
+            _env_file=None, DATA_PATH="unused", DEBUG_ARTIFACTS_PATH="unused"
+        ).DOCILE.TOKEN
+        == ""
+    )

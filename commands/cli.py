@@ -1,15 +1,23 @@
 import argparse
 from collections.abc import Sequence
+from enum import StrEnum
 from pathlib import Path
 
-from app.aggregates.bert.params import BertPytorchParams, BertTrainingParams
+from app.aggregates.bert.params import (
+    BertPytorchParams,
+    BertTrainingParams,
+    DatasetName,
+)
 from app.config import (
     BertConfig,
     BertPytorchConfig,
+    DocileInvoicesConfig,
     KaggleInvoicesConfig,
     Settings,
     get_settings,
 )
+from app.datasets.docile.downloader import DocileDatasetDownloader
+from app.datasets.docile.preparation import DocileInvoicesPreparation
 from app.datasets.kaggle_invoices.downloader import InvoiceDatasetDownloader
 from app.datasets.kaggle_invoices.preparation import KaggleInvoicesPreparation
 from app.extraction.bert.pipeline import BertTrainingPipeline
@@ -22,9 +30,16 @@ def option_name(field_name: str) -> str:
 
 def add_config_options(
     parser: argparse.ArgumentParser,
-    config: BertConfig | BertPytorchConfig | KaggleInvoicesConfig,
+    config: BertConfig
+    | BertPytorchConfig
+    | KaggleInvoicesConfig
+    | DocileInvoicesConfig,
+    *,
+    exclude: tuple[str, ...] = (),
 ) -> None:
     for name, field in type(config).model_fields.items():
+        if name in exclude:
+            continue
         default = getattr(config, name)
         if isinstance(default, bool):
             parser.add_argument(
@@ -39,6 +54,7 @@ def add_config_options(
                 option_name(name),
                 dest=name,
                 type=type(default),
+                choices=list(type(default)) if isinstance(default, StrEnum) else None,
                 help=field.description,
                 default=default,
                 metavar=option_name(name).removeprefix("--"),
@@ -86,6 +102,7 @@ def train_bert_pytorch(args: argparse.Namespace, settings: Settings) -> None:
         num_epoch=args.NUM_EPOCH,
         learning_rate=args.LEARNING_RATE,
         weight_decay=args.WEIGHT_DECAY,
+        dataset_type=DatasetName(args.dataset_name),
     )
     BertPytorchPipeline().run(params)
 
@@ -98,6 +115,22 @@ def download_kaggle_invoices(args: argparse.Namespace, settings: Settings) -> No
     path = KaggleInvoicesPreparation(
         downloader=downloader,
         output_path=Path(args.OUTPUT_PATH),
+    ).run()
+    print(path)
+
+
+def download_docile(args: argparse.Namespace, settings: Settings) -> None:
+    downloader = DocileDatasetDownloader(
+        token=args.TOKEN or settings.DOCILE.TOKEN or settings.DOCILE_TOKEN,
+        target_dir=args.DESTINATION_PATH,
+        unzip=True,
+        minimum_archive_bytes=args.MINIMUM_ARCHIVE_BYTES,
+    )
+    path = DocileInvoicesPreparation(
+        downloader=downloader,
+        output_path=Path(args.OUTPUT_PATH),
+        split=args.SPLIT,
+        use_snapped_boxes=args.USE_SNAPPED_BOXES,
     ).run()
     print(path)
 
@@ -131,13 +164,20 @@ def build_parser(settings: Settings) -> argparse.ArgumentParser:
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     pytorch.add_argument("--random-seed", type=int, default=settings.RANDOM_SEED)
+    pytorch.add_argument(
+        "--dataset-name",
+        type=DatasetName,
+        choices=list(DatasetName),
+        default=settings.DATASET_NAME,
+        help="Select dataset-specific loading, labels, and span preparation.",
+    )
     add_config_options(pytorch, settings.BERT_PYTORCH)
     pytorch.set_defaults(handler=train_bert_pytorch)
 
     datasets = commands.add_parser("datasets", help="Download and prepare datasets")
     dataset_commands = datasets.add_subparsers(dest="dataset_command", required=True)
     download = dataset_commands.add_parser(
-        "download", help="Download a dataset and save a prepared CSV"
+        "download", help="Download a dataset and save a prepared dataframe"
     )
     dataset_names = download.add_subparsers(dest="dataset", required=True)
     kaggle = dataset_names.add_parser(
@@ -147,6 +187,20 @@ def build_parser(settings: Settings) -> argparse.ArgumentParser:
     )
     add_config_options(kaggle, settings.KAGGLE_INVOICES)
     kaggle.set_defaults(handler=download_kaggle_invoices)
+
+    docile = dataset_names.add_parser(
+        "docile",
+        help="Download and prepare annotated DocILE invoices",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    add_config_options(docile, settings.DOCILE, exclude=("TOKEN",))
+    docile.add_argument(
+        "--token",
+        dest="TOKEN",
+        default=None,
+        help="Download token; defaults to the DOCILE_TOKEN environment setting.",
+    )
+    docile.set_defaults(handler=download_docile)
     return parser
 
 
