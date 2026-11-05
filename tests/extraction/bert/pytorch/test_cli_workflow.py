@@ -1,4 +1,5 @@
 import json
+from copy import deepcopy
 from unittest.mock import Mock
 from zipfile import ZipFile
 
@@ -96,6 +97,8 @@ def test_prepared_dataset_can_train_offline_with_csv_history(
     inspector_factory = Mock(side_effect=AssertionError("Diagnostics are disabled"))
     if not diagnostic_dir:
         monkeypatch.setattr(pipeline, "EntityErrorInspector", inspector_factory)
+    split = Mock(wraps=pipeline.BertPytorchPipeline.split_records)
+    monkeypatch.setattr(pipeline.BertPytorchPipeline, "split_records", split)
     cli.main(
         [
             "train",
@@ -115,6 +118,8 @@ def test_prepared_dataset_can_train_offline_with_csv_history(
         ]
     )
     history_path = tmp_path / "results/experiment.csv"
+    split.assert_called_once()
+    assert all("entities" not in row for row in split.call_args.args[0])
     history = pd.read_csv(history_path)
     assert history["epoch"].tolist() == [1, 2]
     assert history["train_loss"].notna().all()
@@ -147,7 +152,7 @@ def test_prepared_dataset_can_train_offline_with_csv_history(
         assert not (tmp_path / "data/interim/bert_diagnostics").exists()
 
 
-@pytest.mark.parametrize("line_items_only", [False, True])
+@pytest.mark.parametrize("line_items_only", [False, True, None])
 def test_docile_cli_download_and_training_use_shared_dataset(
     docile_archive,
     tmp_path,
@@ -178,7 +183,7 @@ def test_docile_cli_download_and_training_use_shared_dataset(
         ]
     )
     assert capsys.readouterr().out.strip() == str(output)
-    if line_items_only:
+    if line_items_only is not False:
         frame = pd.read_parquet(output)
         for index in frame.index:
             data = json.loads(frame.at[index, "json_data"])
@@ -204,7 +209,9 @@ def test_docile_cli_download_and_training_use_shared_dataset(
             intermediate_size=16,
         )
     )
-    monkeypatch.setattr(model_module.AutoModel, "from_pretrained", lambda **kw: encoder)
+    monkeypatch.setattr(
+        model_module.AutoModel, "from_pretrained", lambda **kw: deepcopy(encoder)
+    )
     monkeypatch.setattr(pipeline.torch.cuda, "is_available", lambda: False)
     monkeypatch.setattr(pipeline.torch.backends.mps, "is_available", lambda: False)
     history = tmp_path / "docile-history.csv"
@@ -222,11 +229,64 @@ def test_docile_cli_download_and_training_use_shared_dataset(
             "4",
             "--result-filename",
             str(history),
-            *(["--line-items-only"] if line_items_only else []),
+            *(
+                ["--line-items-only"]
+                if line_items_only is True
+                else ["--body-only"]
+                if line_items_only is False
+                else []
+            ),
             "--max-length-tokens",
             "32",
         ]
     )
+    if line_items_only is None:
+        manifests = []
+        held_out = []
+        for target in ("body", "items"):
+            result = pd.read_csv(history.with_name(f"{history.stem}_{target}.csv"))
+            assert result["epoch"].tolist() == [1]
+            checkpoint = tmp_path / "data/interim/bert_pytorch_checkpoint" / target
+            snapshot = json.loads((checkpoint / "validation.json").read_text())
+            assert snapshot["decoder"] == "ocr_word"
+            assert all(
+                path.startswith("items.") == (target == "items")
+                for path in snapshot["field_to_entity"]
+            )
+            manifests.append(
+                json.loads((checkpoint / "split_manifest.json").read_text())
+            )
+            held_out.append(
+                {
+                    r["document_id"]
+                    for r in json.loads((checkpoint / "test.json").read_text())[
+                        "records"
+                    ]
+                }
+            )
+            cli.main(
+                [
+                    "debug",
+                    "bert-pytorch",
+                    "--checkpoint-dir",
+                    str(checkpoint),
+                    "--output-dir",
+                    str(tmp_path / f"debug-{target}"),
+                    "--device",
+                    "cpu",
+                ]
+            )
+            report = pd.read_csv(tmp_path / f"debug-{target}/decoder_comparison.csv")
+            micro = report.loc[
+                report.entity.eq("micro avg") & report.decoder.eq("ocr_word"),
+                "f1-score",
+            ].iloc[0]
+            assert micro == pytest.approx(result["validation_f1"].iloc[0])
+        assert manifests[0] == manifests[1]
+        assert held_out[0] == held_out[1]
+        assert not history.exists()
+        download.assert_not_called()
+        return
     result = pd.read_csv(history)
     assert result["epoch"].tolist() == [1]
     assert result["train_loss"].notna().all()
@@ -238,6 +298,7 @@ def test_docile_cli_download_and_training_use_shared_dataset(
     assert (checkpoint / "model.pt").is_file()
     snapshot = json.loads((checkpoint / "validation.json").read_text())
     assert snapshot["epoch"] == 1
+    assert snapshot["decoder"] == "ocr_word"
     assert snapshot["max_length"] == 32
     assert snapshot["records"][0]["text_with_boxes"]
     if line_items_only:
@@ -350,9 +411,7 @@ def test_docile_cli_download_and_training_use_shared_dataset(
     original = pd.read_csv(
         tmp_path / "data/interim/bert_diagnostics/epoch_001/per_entity.csv"
     )
-    baseline = comparison.loc[comparison.decoder.eq("token_argmax")].reset_index(
-        drop=True
-    )
+    baseline = comparison.loc[comparison.decoder.eq("ocr_word")].reset_index(drop=True)
     pd.testing.assert_frame_equal(baseline[original.columns], original)
     for decoder in ("token_argmax", "ocr_word"):
         for filename in (

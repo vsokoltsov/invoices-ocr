@@ -127,6 +127,19 @@ def test_line_items_mode_rejects_kaggle_before_loading_dataset(settings, monkeyp
         )
 
 
+def test_body_and_items_are_mutually_exclusive(settings, monkeypatch):
+    parser = cli.build_parser(settings)
+    with pytest.raises(SystemExit):
+        parser.parse_args(["train", "bert-pytorch", "--body-only", "--line-items-only"])
+    monkeypatch.setenv("BERTPYTORCH_LINE_ITEMS_ONLY", "true")
+    settings.BERT_PYTORCH = BertPytorchConfig(_env_file=None)
+    args = cli.build_parser(settings).parse_args(
+        ["train", "bert-pytorch", "--body-only"]
+    )
+    with pytest.raises(ValueError, match="cannot be used together"):
+        args.handler(args, settings)
+
+
 def test_debug_cli_maps_config_and_environment(settings, monkeypatch, tmp_path, capsys):
     monkeypatch.setenv("BERT_PYTORCH_DEBUG_OUTPUT_DIR", str(tmp_path / "debug"))
     settings.BERT_PYTORCH_DEBUG = BertPytorchDebugConfig(_env_file=None)

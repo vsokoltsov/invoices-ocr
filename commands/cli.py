@@ -32,7 +32,7 @@ def option_name(field_name: str) -> str:
 
 
 def add_config_options(
-    parser: argparse.ArgumentParser,
+    parser: argparse.ArgumentParser | argparse._MutuallyExclusiveGroup,
     config: BertConfig
     | BertPytorchConfig
     | BertPytorchDebugConfig
@@ -96,6 +96,8 @@ def train_bert(
 
 
 def train_bert_pytorch(args: argparse.Namespace, settings: Settings) -> None:
+    if args.BODY_ONLY and args.LINE_ITEMS_ONLY:
+        raise ValueError("--body-only and --line-items-only cannot be used together")
     params = BertPytorchParams(
         dataset_path=args.DATASET_PATH,
         result_filename=args.RESULT_FILENAME,
@@ -110,6 +112,7 @@ def train_bert_pytorch(args: argparse.Namespace, settings: Settings) -> None:
         diagnostic_dir=args.DIAGNOSTIC_DIR,
         checkpoint_dir=args.CHECKPOINT_DIR,
         line_items_only=args.LINE_ITEMS_ONLY,
+        body_only=args.BODY_ONLY,
     )
     BertPytorchPipeline().run(params)
 
@@ -193,7 +196,19 @@ def build_parser(settings: Settings) -> argparse.ArgumentParser:
         default=settings.DATASET_NAME,
         help="Select dataset-specific loading, labels, and span preparation.",
     )
-    add_config_options(pytorch, settings.BERT_PYTORCH)
+    add_config_options(
+        pytorch, settings.BERT_PYTORCH, exclude=("BODY_ONLY", "LINE_ITEMS_ONLY")
+    )
+    targets = pytorch.add_mutually_exclusive_group()
+    add_config_options(
+        targets,
+        settings.BERT_PYTORCH,
+        exclude=tuple(
+            name
+            for name in BertPytorchConfig.model_fields
+            if name not in {"BODY_ONLY", "LINE_ITEMS_ONLY"}
+        ),
+    )
     pytorch.set_defaults(handler=train_bert_pytorch)
 
     debug = commands.add_parser("debug", help="Inspect saved model predictions")

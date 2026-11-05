@@ -22,6 +22,7 @@ class BertPytorchParams:
     diagnostic_dir: str | None = "./data/interim/bert_diagnostics"
     checkpoint_dir: str = "./data/interim/bert_pytorch_checkpoint"
     line_items_only: bool = False
+    body_only: bool = False
 
 
 @dataclass(frozen=True, slots=True)

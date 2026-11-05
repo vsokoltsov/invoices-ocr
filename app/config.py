@@ -96,6 +96,10 @@ class BertPytorchConfig(BaseSettings):
         default=False,
         description="Train only DocILE item descriptions, quantities, gross unit prices, and gross amounts.",
     )
+    BODY_ONLY: bool = Field(
+        default=False,
+        description="Train only invoice fields, without the line-item model.",
+    )
     MODEL_NAME: str = Field(
         default="google-bert/bert-base-uncased",
         description="Hugging Face checkpoint used to initialize the token-classification model.",
