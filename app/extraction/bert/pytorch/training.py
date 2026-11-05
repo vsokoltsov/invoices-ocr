@@ -1,4 +1,5 @@
 from dataclasses import asdict, dataclass
+from pathlib import Path
 
 import pandas as pd
 import structlog
@@ -16,6 +17,8 @@ from torchmetrics.classification import (
     MulticlassF1Score,
 )
 from tqdm.auto import tqdm
+
+from app.extraction.bert.pytorch.inspector import EntityErrorInspector
 
 logger = structlog.get_logger()
 
@@ -46,10 +49,21 @@ class OCRInvoiceTraining:
     device: torch.device
     epochs: int
     id2label: dict[int, str]
+    inspector: EntityErrorInspector | None = None
+    diagnostic_dir: str | Path | None = None
+    validation_records: list[dict] | None = None
 
     def __post_init__(self):
         if self.epochs < 1:
             raise ValueError("epochs must be positive.")
+        self.diagnostic_dir = (
+            Path(self.diagnostic_dir).expanduser().resolve()
+            if self.diagnostic_dir
+            else None
+        )
+        if self.inspector is not None and self.diagnostic_dir is not None:
+            if self.validation_records is None:
+                raise ValueError("validation_records are required for diagnostics")
 
     def train_one_epoch(self, epoch: int) -> TrainResult:
         self.model.train()
@@ -215,12 +229,19 @@ class OCRInvoiceTraining:
 
             history.append(epoch_metrics)
 
-            print(
-                f"Epoch {epoch}/{self.epochs} | "
-                f"train loss: {train_metrics.loss:.4f} | "
-                f"validation loss: {validation_metrics.loss:.4f} | "
-                f"validation F1: {validation_metrics.f1:.4f}"
+            logger.info(
+                "Train / eval results",
+                epoch=f"{epoch}/{self.epochs}",
+                train_loss=train_metrics.loss,
+                val_loss=validation_metrics.loss,
+                val_f1=validation_metrics.f1,
             )
+            if self.inspector is not None and self.diagnostic_dir is not None:
+                self.inspector.run(
+                    self.validation_records,
+                    output_dir=Path(self.diagnostic_dir) / f"epoch_{epoch:03d}",
+                    epoch=epoch,
+                )
 
             if validation_metrics.f1 > best_f1:
                 best_f1 = validation_metrics.f1

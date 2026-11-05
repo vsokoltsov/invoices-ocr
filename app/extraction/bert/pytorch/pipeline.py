@@ -16,6 +16,7 @@ from app.aggregates.bert.params import BertPytorchParams, DatasetName
 from app.extraction.bert.pytorch.builder import InvoiceRecordBuilder
 from app.extraction.bert.pytorch.datasets import InvoiceDataset
 from app.extraction.bert.pytorch.docile.builder import DocileRecordBuilder
+from app.extraction.bert.pytorch.inspector import EntityErrorInspector
 from app.extraction.bert.pytorch.model import BertFieldExtractor
 from app.extraction.bert.pytorch.schema import InvoiceLabelSchema
 from app.extraction.bert.pytorch.spans import (
@@ -157,6 +158,7 @@ class BertPytorchPipeline:
             raise RuntimeError(f"Could not load tokenizer for {params.model_name}")
         if not tokenizer.is_fast:
             raise ValueError("Span alignment requires a fast tokenizer")
+
         collator = DataCollatorForTokenClassification(
             tokenizer=tokenizer,
             label_pad_token_id=-100,
@@ -233,6 +235,17 @@ class BertPytorchPipeline:
             collate_fn=collator,
         )
         logger.info("5. Init training process")
+        inspector = (
+            EntityErrorInspector(
+                model=model,
+                tokenizer=tokenizer,
+                label_schema=label_schema,
+                device=device,
+                max_length=params.max_length_tokens,
+            )
+            if params.diagnostic_dir
+            else None
+        )
         trainer = OCRInvoiceTraining(
             model=model,
             optimizer=optimizer,
@@ -242,6 +255,9 @@ class BertPytorchPipeline:
             device=device,
             epochs=params.num_epoch,
             id2label=label_schema.id2label,
+            inspector=inspector,
+            diagnostic_dir=params.diagnostic_dir,
+            validation_records=validation_records if inspector is not None else None,
         )
         logger.info("6. Start training")
         history_df = trainer.train()
@@ -250,6 +266,7 @@ class BertPytorchPipeline:
         )
         result_path.parent.mkdir(parents=True, exist_ok=True)
         history_df.to_csv(result_path, index=False)
+
         logger.info("Saved training history", path=str(result_path))
         trainer.val_loader = test_loader
         logger.info("7. Verify results on test loader")

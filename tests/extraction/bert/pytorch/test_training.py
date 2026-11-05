@@ -1,4 +1,5 @@
 import math
+from unittest.mock import Mock
 
 import pytest
 import torch
@@ -93,8 +94,24 @@ def test_all_masked_batch_is_skipped_when_other_batches_have_labels():
     assert trainer.eval_one_epoch(1).f1 == 1.0
 
 
-def test_train_restores_best_checkpoint_and_returns_scalar_history(monkeypatch):
+def test_train_restores_best_checkpoint_and_returns_scalar_history(
+    monkeypatch, tmp_path
+):
     trainer = make_trainer(epochs=2)
+    inspected_weights = []
+    records = [{"text": "Acme", "entities": []}]
+
+    def inspect(validation_records, output_dir, *, epoch):
+        assert validation_records is records
+        assert epoch == len(inspected_weights) + 1
+        assert output_dir == tmp_path / f"epoch_{epoch:03d}"
+        inspected_weights.append(trainer.model.embedding.weight[0, 0].item())
+
+    inspector = Mock()
+    inspector.run.side_effect = inspect
+    trainer.inspector = inspector
+    trainer.validation_records = records
+    trainer.diagnostic_dir = tmp_path
 
     def train_epoch(epoch):
         with torch.no_grad():
@@ -110,6 +127,7 @@ def test_train_restores_best_checkpoint_and_returns_scalar_history(monkeypatch):
     assert history["validation_f1"].tolist() == [0.9, 0.5]
     assert "validation_per_entity" not in history
     assert torch.all(trainer.model.embedding.weight == 1)
+    assert inspected_weights == [1, 2]
 
 
 def test_training_rejects_nonpositive_epoch_count():
