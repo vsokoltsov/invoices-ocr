@@ -249,7 +249,6 @@ class BertPytorchPipeline:
                 label_schema=label_schema,
                 device=device,
                 max_length=params.max_length_tokens,
-                training_records=train_records,
             )
             if params.diagnostic_dir
             else None
