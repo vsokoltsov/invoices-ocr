@@ -295,6 +295,7 @@ class BertPytorchPipeline:
             df,
             epoch=best_epoch,
             max_length=params.max_length_tokens,
+            test_records=test_records,
         )
         logger.info(
             "Saved best checkpoint and validation inputs", path=str(checkpoint_dir)

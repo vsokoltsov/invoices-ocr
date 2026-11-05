@@ -11,11 +11,22 @@ from app.extraction.bert.pytorch.schema import InvoiceLabelSchema
 
 @dataclass
 class BertPytorchCheckpoint:
-    """Store best weights and the exact validation inputs for offline debugging."""
+    """Store best weights and exact evaluation inputs for offline debugging."""
 
     directory: Path
 
-    def save(self, model, tokenizer, schema, records, frame, *, epoch, max_length):
+    def save(
+        self,
+        model,
+        tokenizer,
+        schema,
+        records,
+        frame,
+        *,
+        epoch,
+        max_length,
+        test_records=None,
+    ):
         self.directory.mkdir(parents=True, exist_ok=True)
         model.bert.config.save_pretrained(self.directory / "encoder")
         tokenizer.save_pretrained(self.directory / "tokenizer")
@@ -23,12 +34,25 @@ class BertPytorchCheckpoint:
             {key: value.detach().cpu() for key, value in model.state_dict().items()},
             self.directory / "model.pt",
         )
+        self.save_records(
+            "validation", records, frame, schema, epoch=epoch, max_length=max_length
+        )
+        if test_records is not None:
+            self.save_records(
+                "test", test_records, frame, schema, epoch=epoch, max_length=max_length
+            )
+
+    def save_records(self, split, records, frame, schema, *, epoch, max_length):
+        """Save evaluation inputs with their original OCR word offsets."""
+        if split not in {"validation", "test"}:
+            raise ValueError("Split must be validation or test")
+        self.directory.mkdir(parents=True, exist_ok=True)
         words = (
             dict(zip(frame["document_id"], frame["text_with_boxes"], strict=True))
             if "text_with_boxes" in frame
             else {}
         )
-        validation = []
+        saved_records = []
         for record in records:
             saved = dict(record)
             if words:
@@ -45,19 +69,20 @@ class BertPytorchCheckpoint:
                         raise ValueError(
                             "OCR word offsets do not match validation text"
                         )
-            validation.append(saved)
+            saved_records.append(saved)
         payload = {
             "epoch": int(epoch),
             "max_length": int(max_length),
             "field_to_entity": schema.field_to_entity,
-            "records": validation,
+            "records": saved_records,
         }
-        (self.directory / "validation.json").write_text(
+        (self.directory / f"{split}.json").write_text(
             json.dumps(
                 payload, ensure_ascii=False, default=lambda value: value.tolist()
             ),
             encoding="utf-8",
         )
+        return payload
 
     def load(self, device: torch.device):
         """Load local artifacts without fetching a pretrained model or dataset."""
