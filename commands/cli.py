@@ -109,6 +109,7 @@ def train_bert_pytorch(args: argparse.Namespace, settings: Settings) -> None:
         dataset_type=DatasetName(args.dataset_name),
         diagnostic_dir=args.DIAGNOSTIC_DIR,
         checkpoint_dir=args.CHECKPOINT_DIR,
+        line_items_only=args.LINE_ITEMS_ONLY,
     )
     BertPytorchPipeline().run(params)
 

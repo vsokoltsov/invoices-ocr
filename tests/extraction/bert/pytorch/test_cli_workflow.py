@@ -147,12 +147,14 @@ def test_prepared_dataset_can_train_offline_with_csv_history(
         assert not (tmp_path / "data/interim/bert_diagnostics").exists()
 
 
+@pytest.mark.parametrize("line_items_only", [False, True])
 def test_docile_cli_download_and_training_use_shared_dataset(
     docile_archive,
     tmp_path,
     monkeypatch,
     capsys,
     fast_tokenizer,
+    line_items_only,
 ):
     monkeypatch.chdir(tmp_path)
     settings = Settings(
@@ -176,6 +178,18 @@ def test_docile_cli_download_and_training_use_shared_dataset(
         ]
     )
     assert capsys.readouterr().out.strip() == str(output)
+    if line_items_only:
+        frame = pd.read_parquet(output)
+        for index in frame.index:
+            data = json.loads(frame.at[index, "json_data"])
+            data["items"] = [
+                {
+                    "line_item_id": 7,
+                    "fields": {"description": data["invoice"]["seller_name"]},
+                }
+            ]
+            frame.at[index, "json_data"] = json.dumps(data)
+        frame.to_parquet(output, index=False)
     download = Mock(side_effect=AssertionError("Training must not download archives"))
     monkeypatch.setattr(DocileDatasetDownloader, "download", download)
     monkeypatch.setattr(
@@ -208,6 +222,7 @@ def test_docile_cli_download_and_training_use_shared_dataset(
             "4",
             "--result-filename",
             str(history),
+            *(["--line-items-only"] if line_items_only else []),
             "--max-length-tokens",
             "32",
         ]
@@ -225,6 +240,16 @@ def test_docile_cli_download_and_training_use_shared_dataset(
     assert snapshot["epoch"] == 1
     assert snapshot["max_length"] == 32
     assert snapshot["records"][0]["text_with_boxes"]
+    if line_items_only:
+        assert set(snapshot["field_to_entity"]) == {
+            "items.description",
+            "items.quantity",
+            "items.unit_price",
+            "items.total_price",
+        }
+        assert all(
+            e["line_item_id"] == 7 for r in snapshot["records"] for e in r["entities"]
+        )
     # Debug must use saved inputs, with no access to the original dataset.
     output.unlink()
     debug_dir = tmp_path / "comparison"

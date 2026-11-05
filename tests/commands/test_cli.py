@@ -93,6 +93,40 @@ def test_cli_uses_pytorch_configuration_defaults(settings):
         assert getattr(args, name) == getattr(settings.BERT_PYTORCH, name)
 
 
+def test_line_items_flag_uses_environment_and_cli_override(settings, monkeypatch):
+    monkeypatch.setenv("BERTPYTORCH_LINE_ITEMS_ONLY", "true")
+    settings.BERT_PYTORCH = BertPytorchConfig(_env_file=None)
+    parser = cli.build_parser(settings)
+    assert parser.parse_args(["train", "bert-pytorch"]).LINE_ITEMS_ONLY is True
+    assert (
+        parser.parse_args(
+            ["train", "bert-pytorch", "--no-line-items-only"]
+        ).LINE_ITEMS_ONLY
+        is False
+    )
+    pipeline = Mock()
+    monkeypatch.setattr(cli, "BertPytorchPipeline", lambda: pipeline)
+    args = parser.parse_args(
+        ["train", "bert-pytorch", "--dataset-name", "docile", "--line-items-only"]
+    )
+    args.handler(args, settings)
+    assert pipeline.run.call_args.args[0].line_items_only is True
+
+
+def test_line_items_mode_rejects_kaggle_before_loading_dataset(settings, monkeypatch):
+    monkeypatch.setattr(cli, "get_settings", lambda: settings)
+    with pytest.raises(ValueError, match="requires --dataset-name docile"):
+        cli.main(
+            [
+                "train",
+                "bert-pytorch",
+                "--dataset-name",
+                "kaggle_invoices",
+                "--line-items-only",
+            ]
+        )
+
+
 def test_debug_cli_maps_config_and_environment(settings, monkeypatch, tmp_path, capsys):
     monkeypatch.setenv("BERT_PYTORCH_DEBUG_OUTPUT_DIR", str(tmp_path / "debug"))
     settings.BERT_PYTORCH_DEBUG = BertPytorchDebugConfig(_env_file=None)
