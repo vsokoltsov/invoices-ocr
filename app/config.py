@@ -35,6 +35,10 @@ class DocileInvoicesConfig(BaseSettings):
         default=True,
         description="Use OCR boxes snapped to the text when available.",
     )
+    CORRECTIONS_PATH: str = Field(
+        default="",
+        description="Optional JSON annotation-correction file; empty preserves original labels.",
+    )
     MINIMUM_ARCHIVE_BYTES: int = Field(
         default=100_000_000,
         ge=0,

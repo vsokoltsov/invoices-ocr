@@ -13,6 +13,7 @@ class DocileInvoicesPreparation:
     output_path: Path
     split: DocileSplit = DocileSplit.TRAINVAL
     use_snapped_boxes: bool = True
+    corrections_path: str | Path | None = None
 
     def run(self) -> Path:
         """Save nested invoice data and available official split assignments.
@@ -20,6 +21,7 @@ class DocileInvoicesPreparation:
         Reuse extracted data when the selected split and data directories exist.
         Store annotations as JSON to preserve empty sections and variable metadata.
         Parquet keeps OCR word structures; CSV stores these as JSON too.
+        Optional corrections are applied before conversion and saved as audit JSON.
         Return the absolute path to the prepared file.
         """
         output_path = self.output_path.expanduser().resolve()
@@ -28,6 +30,11 @@ class DocileInvoicesPreparation:
         selected_split = DocileSplit(self.split)
 
         root = self.downloader.target_dir.resolve()
+        loader = DocileDatasetLoader(
+            root,
+            use_snapped_boxes=self.use_snapped_boxes,
+            corrections_path=self.corrections_path,
+        )
         extracted = (
             (root / f"{selected_split}.json").is_file()
             and (root / "annotations").is_dir()
@@ -38,7 +45,7 @@ class DocileInvoicesPreparation:
                 raise ValueError("Dataset preparation requires unzip=True")
             root = self.downloader.download().resolve()
 
-        loader = DocileDatasetLoader(root, use_snapped_boxes=self.use_snapped_boxes)
+        loader.root = root
         frame = loader.to_dataframe(selected_split)
         if frame.empty:
             raise ValueError("Selected split contains no documents")
@@ -57,9 +64,11 @@ class DocileInvoicesPreparation:
                 raise ValueError("Some documents have no official split assignment")
 
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        frame["json_data"] = frame["json_data"].map(
-            lambda value: json.dumps(value, ensure_ascii=False)
-        )
+        for column in ("json_data", "annotation_corrections"):
+            if column in frame:
+                frame[column] = frame[column].map(
+                    lambda value: json.dumps(value, ensure_ascii=False)
+                )
         if output_path.suffix.lower() == ".parquet":
             frame.to_parquet(output_path, index=False)
         else:

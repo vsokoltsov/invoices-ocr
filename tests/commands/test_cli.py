@@ -3,7 +3,7 @@ from unittest.mock import Mock
 import pytest
 
 from app.aggregates.bert.params import DatasetName
-from app.config import BertConfig, BertPytorchConfig, Settings
+from app.config import BertConfig, BertPytorchConfig, DocileInvoicesConfig, Settings
 from app.datasets.docile.enums import DocileSplit
 from commands import cli
 
@@ -138,6 +138,24 @@ def test_docile_split_cli_uses_enum_and_rejects_invalid_values(settings):
     assert args.SPLIT is DocileSplit.TEST
     with pytest.raises(SystemExit):
         parser.parse_args(["datasets", "download", "docile", "--split", "unknown"])
+
+
+def test_docile_corrections_path_uses_environment_and_cli_override(
+    settings, monkeypatch
+):
+    monkeypatch.setenv("DOCILE_CORRECTIONS_PATH", "reviewed.json")
+    settings.DOCILE = DocileInvoicesConfig(_env_file=None)
+    parser = cli.build_parser(settings)
+    assert (
+        parser.parse_args(["datasets", "download", "docile"]).CORRECTIONS_PATH
+        == "reviewed.json"
+    )
+    assert (
+        parser.parse_args(
+            ["datasets", "download", "docile", "--corrections-path", ""]
+        ).CORRECTIONS_PATH
+        == ""
+    )
 
 
 def test_missing_csv_fails_before_tokenizer_initialization(

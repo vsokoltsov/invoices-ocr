@@ -132,6 +132,7 @@ def download_docile(args: argparse.Namespace, settings: Settings) -> None:
         output_path=Path(args.OUTPUT_PATH),
         split=args.SPLIT,
         use_snapped_boxes=args.USE_SNAPPED_BOXES,
+        corrections_path=args.CORRECTIONS_PATH or None,
     ).run()
     print(path)
 

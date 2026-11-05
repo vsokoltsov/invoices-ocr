@@ -7,6 +7,7 @@ import pandas as pd
 from tqdm.std import tqdm
 
 from app.datasets.docile.converter import DocileAnnotationConverter
+from app.datasets.docile.corrections import DocileAnnotationCorrections
 from app.datasets.docile.enums import DocileSplit
 from app.datasets.docile.models import BBox, DocileRecord, OCRWord
 from app.datasets.docile.order import OCRReadingOrder
@@ -14,12 +15,26 @@ from app.datasets.docile.order import OCRReadingOrder
 
 @dataclass(init=False)
 class DocileDatasetLoader:
+    """Load OCR and optionally correct field types in memory before conversion."""
+
     root: Path
     use_snapped_boxes: bool = True
+    corrections: DocileAnnotationCorrections | None = None
 
-    def __init__(self, root: str | Path, use_snapped_boxes: bool = True) -> None:
+    def __init__(
+        self,
+        root: str | Path,
+        use_snapped_boxes: bool = True,
+        *,
+        corrections_path: str | Path | None = None,
+    ) -> None:
         self.root = Path(root).expanduser()
         self.use_snapped_boxes = use_snapped_boxes
+        self.corrections = (
+            DocileAnnotationCorrections.from_file(corrections_path)
+            if corrections_path
+            else None
+        )
 
     @staticmethod
     def _parse_box(geometry: list) -> BBox:
@@ -75,6 +90,8 @@ class DocileDatasetLoader:
 
         with annotation_path.open(encoding="utf-8") as file:
             json_data = json.load(file)
+        if self.corrections is not None:
+            json_data = self.corrections.apply(document_id, json_data)
 
         with ocr_path.open(encoding="utf-8") as file:
             ocr_data = json.load(file)
@@ -170,7 +187,9 @@ class DocileDatasetLoader:
             try:
                 record = self.load(document_id)
             except Exception as exc:
-                raise RuntimeError(f"Failed to load document {document_id}") from exc
+                raise RuntimeError(
+                    f"Failed to load document {document_id}: {exc}"
+                ) from exc
 
             rows.append(
                 {
@@ -183,5 +202,10 @@ class DocileDatasetLoader:
                     "pdf_path": str(self.root / "pdfs" / f"{document_id}.pdf"),
                 }
             )
+            if self.corrections is not None:
+                rows[-1]["annotation_corrections"] = [
+                    rule.model_dump(mode="json")
+                    for rule in self.corrections.for_document(document_id)
+                ]
 
         return pd.DataFrame(rows)
