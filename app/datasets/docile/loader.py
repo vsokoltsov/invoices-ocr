@@ -2,12 +2,12 @@ import json
 from collections.abc import Iterator
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Literal
 
 import pandas as pd
 from tqdm.std import tqdm
 
 from app.datasets.docile.converter import DocileAnnotationConverter
+from app.datasets.docile.enums import DocileSplit
 from app.datasets.docile.models import BBox, DocileRecord, OCRWord
 from app.datasets.docile.order import OCRReadingOrder
 
@@ -38,11 +38,9 @@ class DocileDatasetLoader:
 
     def document_ids(
         self,
-        split: Literal["train", "val", "trainval"] = "trainval",
+        split: DocileSplit | str = DocileSplit.TRAINVAL,
     ) -> list[str]:
-        if split not in {"train", "val", "trainval"}:
-            raise ValueError("split must be 'train', 'val' or 'trainval'.")
-
+        split = DocileSplit(split)
         path = self.root / f"{split}.json"
 
         with path.open(encoding="utf-8") as file:
@@ -52,6 +50,8 @@ class DocileDatasetLoader:
             isinstance(document_id, str) for document_id in document_ids
         ):
             raise ValueError(f"{path} must contain a list of document IDs.")
+        if len(document_ids) != len(set(document_ids)):
+            raise ValueError(f"{path} contains duplicate document IDs.")
 
         return document_ids
 
@@ -145,7 +145,7 @@ class DocileDatasetLoader:
 
     def iter_split(
         self,
-        split: Literal["train", "val", "trainval"] = "train",
+        split: DocileSplit | str = DocileSplit.TRAIN,
     ) -> Iterator[DocileRecord]:
         """Load documents one at a time rather than preloading the split."""
         for document_id in self.document_ids(split):
@@ -153,7 +153,7 @@ class DocileDatasetLoader:
 
     def to_dataframe(
         self,
-        split: Literal["train", "val", "trainval"] = "trainval",
+        split: DocileSplit | str = DocileSplit.TRAINVAL,
         *,
         show_progress: bool = True,
     ) -> pd.DataFrame:
