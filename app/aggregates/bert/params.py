@@ -19,6 +19,7 @@ class BertPytorchParams:
     learning_rate: float
     weight_decay: float
     dataset_type: DatasetName = DatasetName.KAGGLE_INVOICES
+    diagnostic_dir: str | None = "./data/interim/bert_diagnostics"
 
 
 @dataclass(frozen=True, slots=True)

@@ -80,6 +80,10 @@ class BertPytorchConfig(BaseSettings):
         default="bert_training_pipeline",
         description="Training-history filename or path; the extension is always .csv.",
     )
+    DIAGNOSTIC_DIR: str = Field(
+        default="./data/interim/bert_diagnostics",
+        description="Directory for per-epoch validation diagnostics; an empty value disables inspection.",
+    )
     MODEL_NAME: str = Field(
         default="google-bert/bert-base-uncased",
         description="Hugging Face checkpoint used to initialize the token-classification model.",

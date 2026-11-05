@@ -103,6 +103,7 @@ def train_bert_pytorch(args: argparse.Namespace, settings: Settings) -> None:
         learning_rate=args.LEARNING_RATE,
         weight_decay=args.WEIGHT_DECAY,
         dataset_type=DatasetName(args.dataset_name),
+        diagnostic_dir=args.DIAGNOSTIC_DIR,
     )
     BertPytorchPipeline().run(params)
 

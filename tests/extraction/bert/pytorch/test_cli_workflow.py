@@ -15,7 +15,8 @@ from commands import cli
 
 
 @pytest.mark.parametrize(
-    "result_filename", ["results/experiment", "results/experiment.json"]
+    "result_filename,diagnostic_dir",
+    [("results/experiment", "results/diagnostics"), ("results/experiment.json", "")],
 )
 def test_prepared_dataset_can_train_offline_with_csv_history(
     tmp_path,
@@ -23,6 +24,7 @@ def test_prepared_dataset_can_train_offline_with_csv_history(
     capsys,
     fast_tokenizer,
     result_filename,
+    diagnostic_dir,
 ):
     monkeypatch.chdir(tmp_path)
     settings = Settings(
@@ -91,6 +93,9 @@ def test_prepared_dataset_can_train_offline_with_csv_history(
     )
     monkeypatch.setattr(pipeline.torch.cuda, "is_available", lambda: False)
     monkeypatch.setattr(pipeline.torch.backends.mps, "is_available", lambda: False)
+    inspector_factory = Mock(side_effect=AssertionError("Diagnostics are disabled"))
+    if not diagnostic_dir:
+        monkeypatch.setattr(pipeline, "EntityErrorInspector", inspector_factory)
     cli.main(
         [
             "train",
@@ -100,7 +105,9 @@ def test_prepared_dataset_can_train_offline_with_csv_history(
             "--result-filename",
             result_filename,
             "--num-epoch",
-            "1",
+            "2",
+            "--diagnostic-dir",
+            diagnostic_dir,
             "--batch-size",
             "2",
             "--max-length-tokens",
@@ -109,12 +116,35 @@ def test_prepared_dataset_can_train_offline_with_csv_history(
     )
     history_path = tmp_path / "results/experiment.csv"
     history = pd.read_csv(history_path)
-    assert history["epoch"].tolist() == [1]
+    assert history["epoch"].tolist() == [1, 2]
     assert history["train_loss"].notna().all()
     assert history["validation_f1"].notna().all()
     assert "Unnamed: 0" not in history.columns
     assert not (tmp_path / "results/experiment.json").exists()
     download.assert_not_called()
+    if diagnostic_dir:
+        for epoch in (1, 2):
+            folder = tmp_path / diagnostic_dir / f"epoch_{epoch:03d}"
+            assert (
+                "SELLER_NAME"
+                in pd.read_csv(folder / "per_entity.csv")["entity"].tolist()
+            )
+            assert pd.read_csv(folder / "per_entity.csv")[
+                "epoch"
+            ].unique().tolist() == [epoch]
+            for filename in (
+                "entity_errors.csv",
+                "false_positive.csv",
+                "false_negative.csv",
+            ):
+                errors = pd.read_csv(folder / filename)
+                assert "epoch" in errors.columns
+                assert errors["epoch"].eq(epoch).all()
+            assert "context" in pd.read_csv(folder / "false_positive.csv").columns
+            assert (folder / "false_negative.csv").is_file()
+    else:
+        inspector_factory.assert_not_called()
+        assert not (tmp_path / "data/interim/bert_diagnostics").exists()
 
 
 def test_docile_cli_download_and_training_use_shared_dataset(
@@ -185,4 +215,7 @@ def test_docile_cli_download_and_training_use_shared_dataset(
     result = pd.read_csv(history)
     assert result["epoch"].tolist() == [1]
     assert result["train_loss"].notna().all()
+    assert (
+        tmp_path / "data/interim/bert_diagnostics/epoch_001/per_entity.csv"
+    ).is_file()
     download.assert_not_called()
