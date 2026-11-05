@@ -1,0 +1,20 @@
+[
+  {
+    "document_id": "26f0e3a78e26450b9b47dd81",
+    "page": 0,
+    "expected_fieldtype": "vendor_name",
+    "expected_text": "3646 Momentum Place\nChicago, IL 60689-5336",
+    "expected_bbox": [0.6437185674371348, 0.15351133368208808, 0.7924257048514097, 0.18578807563575786],
+    "replacement_fieldtype": "vendor_address",
+    "reason": "PDF review confirms a remittance postal address rather than a company name."
+  },
+  {
+    "document_id": "26f0e3a78e26450b9b47dd81",
+    "page": 1,
+    "expected_fieldtype": "vendor_name",
+    "expected_text": "3646 Momentum Place\nChicago, IL 60689-5336",
+    "expected_bbox": [0.6427000254000508, 0.15351133368208808, 0.7883515367030735, 0.1834263628098796],
+    "replacement_fieldtype": "vendor_address",
+    "reason": "PDF review confirms a remittance postal address rather than a company name."
+  }
+]
