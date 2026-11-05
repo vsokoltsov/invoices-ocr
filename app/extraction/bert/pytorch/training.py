@@ -18,6 +18,7 @@ from torchmetrics.classification import (
 )
 from tqdm.auto import tqdm
 
+from app.extraction.bert.pytorch.decoding import OCRWordDecoder
 from app.extraction.bert.pytorch.inspector import EntityErrorInspector
 
 logger = structlog.get_logger()
@@ -52,6 +53,7 @@ class OCRInvoiceTraining:
     inspector: EntityErrorInspector | None = None
     diagnostic_dir: str | Path | None = None
     validation_records: list[dict] | None = None
+    word_decoder: OCRWordDecoder | None = None
 
     def __post_init__(self):
         if self.epochs < 1:
@@ -131,6 +133,10 @@ class OCRInvoiceTraining:
             self.val_loader, position=1, desc=f"Eval epoch {epoch}", leave=False
         )
         for batch in progress_bar:
+            metadata = batch.get("decoder_metadata")
+            batch = {
+                key: value for key, value in batch.items() if key != "decoder_metadata"
+            }
             batch = {key: value.to(self.device) for key, value in batch.items()}
             targets = batch["labels"]
             valid = targets != -100
@@ -148,6 +154,17 @@ class OCRInvoiceTraining:
             )
 
             predictions = logits.argmax(dim=-1)
+            if self.word_decoder is not None:
+                if metadata is None:
+                    raise ValueError("OCR-word evaluation requires decoding metadata")
+                for index, item in enumerate(metadata):
+                    length = len(item["offsets"])
+                    predictions[index, :length] = torch.tensor(
+                        self.word_decoder.decode(
+                            logits[index, :length], item["offsets"], item["words"]
+                        ),
+                        device=self.device,
+                    )
 
             accuracy.update(predictions[valid], targets[valid])
             macro_f1.update(predictions[valid], targets[valid])

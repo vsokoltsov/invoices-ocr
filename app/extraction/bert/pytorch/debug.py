@@ -61,9 +61,24 @@ class BertPytorchDebugPipeline:
         )
         if rebuilt_schema.field_to_entity != schema.field_to_entity:
             raise ValueError("Rebuilt label schema does not match the checkpoint")
-        _, rebuilt_validation, test = BertPytorchPipeline.split_records(
-            records, frame, training_params
-        )
+        manifest = checkpoint_dir / "split_manifest.json"
+        if manifest.is_file():
+            membership = json.loads(manifest.read_text(encoding="utf-8"))
+            by_id = {record["document_id"]: record for record in records}
+            rebuilt_validation = [
+                by_id[document_id]
+                for document_id, split in membership.items()
+                if split == "validation" and document_id in by_id
+            ]
+            test = [
+                by_id[document_id]
+                for document_id, split in membership.items()
+                if split == "test" and document_id in by_id
+            ]
+        else:
+            _, rebuilt_validation, test = BertPytorchPipeline.split_records(
+                records, frame, training_params
+            )
         # Compare supervised inputs, not only IDs, before trusting reconstructed membership.
         keys = ("document_id", "text", "entities", "ignored_regions")
 
@@ -85,6 +100,7 @@ class BertPytorchDebugPipeline:
             schema,
             epoch=validation["epoch"],
             max_length=validation["max_length"],
+            decoder=validation.get("decoder", "token_argmax"),
         )
 
     def run(self, params: BertPytorchDebugParams) -> Path:

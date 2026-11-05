@@ -4,7 +4,16 @@ from torch.utils.data import Dataset
 class InvoiceDataset(Dataset):
     """Convert OCR spans into BIO labels for consecutive token windows."""
 
-    def __init__(self, records, tokenizer, label2id, field_to_entity, max_length=512):
+    def __init__(
+        self,
+        records,
+        tokenizer,
+        label2id,
+        field_to_entity,
+        max_length=512,
+        *,
+        include_decoder_metadata=False,
+    ):
         self.examples = []
 
         for record in records:
@@ -75,6 +84,11 @@ class InvoiceDataset(Dataset):
                     if key in encoded
                 }
                 example["labels"] = labels
+                if include_decoder_metadata:
+                    example["decoder_metadata"] = {
+                        "offsets": offsets,
+                        "words": record["text_with_boxes"],
+                    }
 
                 self.examples.append(example)
 

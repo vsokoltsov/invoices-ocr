@@ -6,6 +6,8 @@ import torch
 from torch import nn
 from torch.utils.data import DataLoader, Dataset
 
+from app.extraction.bert.pytorch.collation import InvoiceDataCollator
+from app.extraction.bert.pytorch.decoding import OCRWordDecoder
 from app.extraction.bert.pytorch.training import (
     EvalResult,
     OCRInvoiceTraining,
@@ -133,3 +135,46 @@ def test_train_restores_best_checkpoint_and_returns_scalar_history(
 def test_training_rejects_nonpositive_epoch_count():
     with pytest.raises(ValueError, match="epochs must be positive"):
         make_trainer(epochs=0)
+
+
+def test_word_decoding_changes_metrics_without_changing_loss_or_padding(fast_tokenizer):
+    trainer = make_trainer()
+    examples = [
+        {
+            "input_ids": [1, 0, 2],
+            "attention_mask": [1, 1, 1],
+            "labels": [1, 2, 2],
+            "decoder_metadata": {
+                "offsets": [(0, 2), (2, 3), (3, 6)],
+                "words": [{"start": 0, "end": 6}],
+            },
+        },
+        {
+            "input_ids": [1],
+            "attention_mask": [1],
+            "labels": [1],
+            "decoder_metadata": {
+                "offsets": [(0, 2)],
+                "words": [{"start": 0, "end": 2}],
+            },
+        },
+    ]
+    trainer.val_loader = DataLoader(
+        BatchDataset(examples),
+        batch_size=2,
+        collate_fn=InvoiceDataCollator(fast_tokenizer),
+    )
+    baseline = trainer.eval_one_epoch(1)
+    trainer.word_decoder = OCRWordDecoder({"O": 0, "B-NAME": 1, "I-NAME": 2})
+    decoded = trainer.eval_one_epoch(1)
+    assert baseline.f1 < decoded.f1 == 1
+    assert baseline.loss == pytest.approx(decoded.loss)
+    assert decoded.per_entity["NAME"]["support"] == 2
+    assert examples[0]["decoder_metadata"]["offsets"] == [(0, 2), (2, 3), (3, 6)]
+
+
+def test_word_evaluation_requires_offsets_and_words():
+    trainer = make_trainer()
+    trainer.word_decoder = OCRWordDecoder({"O": 0, "B-NAME": 1, "I-NAME": 2})
+    with pytest.raises(ValueError, match="requires decoding metadata"):
+        trainer.eval_one_epoch(1)

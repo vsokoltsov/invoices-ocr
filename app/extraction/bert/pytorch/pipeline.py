@@ -1,6 +1,6 @@
 import json
 import random
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import numpy as np
@@ -10,12 +10,14 @@ import torch
 from sklearn.model_selection import train_test_split
 from torch import nn
 from torch.utils.data import DataLoader
-from transformers import AutoTokenizer, DataCollatorForTokenClassification, set_seed
+from transformers import AutoTokenizer, set_seed
 
 from app.aggregates.bert.params import BertPytorchParams, DatasetName
 from app.extraction.bert.pytorch.builder import InvoiceRecordBuilder
 from app.extraction.bert.pytorch.checkpoint import BertPytorchCheckpoint
+from app.extraction.bert.pytorch.collation import InvoiceDataCollator
 from app.extraction.bert.pytorch.datasets import InvoiceDataset
+from app.extraction.bert.pytorch.decoding import OCRWordDecoder
 from app.extraction.bert.pytorch.docile.builder import DocileRecordBuilder
 from app.extraction.bert.pytorch.docile.item_builder import DocileItemRecordBuilder
 from app.extraction.bert.pytorch.enums import InvoiceBIOLabel, InvoiceField
@@ -147,10 +149,57 @@ class BertPytorchPipeline:
         return train, validation, test
 
     def run(self, params: BertPytorchParams):
-        """Train on accepted invoices and evaluate the best weights on held-out data."""
+        """Train separate body and item models, or one explicitly selected model.
+
+        DocILE document membership is fixed before task-specific record rejection.
+        Kaggle supports only the body model because it has no item-box alignment.
+        """
+        if params.body_only and params.line_items_only:
+            raise ValueError(
+                "--body-only and --line-items-only cannot be used together"
+            )
         if params.line_items_only and params.dataset_type != DatasetName.DOCILE:
             raise ValueError("--line-items-only requires --dataset-name docile")
         df = self.load_frame(params)
+        rows = [{"row_position": position} for position in range(len(df))]
+        if params.dataset_type == DatasetName.DOCILE:
+            for row, document_id in zip(rows, df["document_id"], strict=True):
+                row["document_id"] = document_id
+        train_rows, validation_rows, test_rows = self.split_records(rows, df, params)
+        train_df = df.iloc[[row["row_position"] for row in train_rows]].copy()
+        validation_df = df.iloc[[row["row_position"] for row in validation_rows]].copy()
+        test_df = df.iloc[[row["row_position"] for row in test_rows]].copy()
+        targets = (
+            ("items",)
+            if params.line_items_only
+            else ("body",)
+            if params.body_only or params.dataset_type != DatasetName.DOCILE
+            else ("body", "items")
+        )
+        results = {}
+        for target in targets:
+            model_params = replace(
+                params, line_items_only=target == "items", body_only=target == "body"
+            )
+            if len(targets) == 2:
+                result = Path(params.result_filename).with_suffix(".csv")
+                model_params = replace(
+                    model_params,
+                    result_filename=str(
+                        result.with_name(f"{result.stem}_{target}.csv")
+                    ),
+                    checkpoint_dir=str(Path(params.checkpoint_dir) / target),
+                    diagnostic_dir=str(Path(params.diagnostic_dir) / target)
+                    if params.diagnostic_dir
+                    else params.diagnostic_dir,
+                )
+            results[target] = self._run_model(
+                model_params, train_df, validation_df, test_df
+            )
+        return results if len(targets) == 2 else results[targets[0]]
+
+    def _run_model(self, params, train_df, validation_df, test_df):
+        """Prepare fixed partitions and select weights using evaluation decoding."""
 
         random.seed(params.random_seed)
         np.random.seed(params.random_seed)
@@ -173,18 +222,36 @@ class BertPytorchPipeline:
         if not tokenizer.is_fast:
             raise ValueError("Span alignment requires a fast tokenizer")
 
-        collator = DataCollatorForTokenClassification(
-            tokenizer=tokenizer,
-            label_pad_token_id=-100,
-        )
+        collator = InvoiceDataCollator(tokenizer=tokenizer)
 
-        records, rejected, label_schema = self.prepare_records(
-            df, params.dataset_type, line_items_only=params.line_items_only
-        )
+        prepared = [
+            self.prepare_records(
+                partition, params.dataset_type, line_items_only=params.line_items_only
+            )
+            for partition in (train_df, validation_df, test_df)
+        ]
+        train_records, validation_records, test_records = [
+            result[0] for result in prepared
+        ]
+        records = train_records + validation_records + test_records
+        rejected = [record for result in prepared for record in result[1]]
+        label_schema = prepared[0][2]
+        if not all((train_records, validation_records, test_records)):
+            raise ValueError(
+                "Each fixed document split must contain accepted records for this model"
+            )
+        df = pd.concat((train_df, validation_df, test_df))
+        word_decoder = None
+        if params.dataset_type == DatasetName.DOCILE:
+            word_decoder = OCRWordDecoder(label_schema.label2id)
+            words = dict(zip(df["document_id"], df["text_with_boxes"], strict=True))
+            for record in records:
+                record["text_with_boxes"] = words[record["document_id"]]
         logger.info(
             "bert_pytorch_records",
             accepted=len(records),
             rejected=len(rejected),
+            decoder="ocr_word" if word_decoder is not None else "token_argmax",
             training_target="line_items"
             if params.line_items_only
             else "invoice_fields",
@@ -193,7 +260,7 @@ class BertPytorchPipeline:
             ),
         )
         if len(records) < 10:
-            raise ValueError("At least 10 accepted invoices are required for the split")
+            raise ValueError("At least 10 accepted invoices are required for training")
         logger.info("3. Init model")
         model = BertFieldExtractor(
             model_name=params.model_name, num_labels=label_schema.num_labels
@@ -205,10 +272,7 @@ class BertPytorchPipeline:
         )
         criterion = nn.CrossEntropyLoss(ignore_index=-100)
 
-        logger.info("4. Split data and init datasets")
-        train_records, validation_records, test_records = self.split_records(
-            records, df, params
-        )
+        logger.info("4. Init datasets from prepared partitions")
         logger.info(
             "bert_pytorch_split",
             source="official_docile"
@@ -231,6 +295,7 @@ class BertPytorchPipeline:
             label_schema.label2id,
             label_schema.field_to_entity,
             max_length=params.max_length_tokens,
+            include_decoder_metadata=word_decoder is not None,
         )
         test_dataset = InvoiceDataset(
             test_records,
@@ -238,6 +303,7 @@ class BertPytorchPipeline:
             label_schema.label2id,
             label_schema.field_to_entity,
             max_length=params.max_length_tokens,
+            include_decoder_metadata=word_decoder is not None,
         )
         train_loader = DataLoader(
             train_dataset,
@@ -266,6 +332,7 @@ class BertPytorchPipeline:
                 label_schema=label_schema,
                 device=device,
                 max_length=params.max_length_tokens,
+                word_decoder=word_decoder,
             )
             if params.diagnostic_dir
             else None
@@ -282,6 +349,7 @@ class BertPytorchPipeline:
             inspector=inspector,
             diagnostic_dir=params.diagnostic_dir,
             validation_records=validation_records if inspector is not None else None,
+            word_decoder=word_decoder,
         )
         logger.info("6. Start training")
         history_df = trainer.train()
@@ -296,7 +364,21 @@ class BertPytorchPipeline:
             epoch=best_epoch,
             max_length=params.max_length_tokens,
             test_records=test_records,
+            decoder="ocr_word" if word_decoder is not None else "token_argmax",
         )
+        if params.dataset_type == DatasetName.DOCILE:
+            manifest = {
+                document_id: split
+                for split, partition in zip(
+                    ("train", "validation", "test"),
+                    (train_df, validation_df, test_df),
+                    strict=True,
+                )
+                for document_id in partition["document_id"]
+            }
+            (checkpoint_dir / "split_manifest.json").write_text(
+                json.dumps(manifest, indent=2), encoding="utf-8"
+            )
         logger.info(
             "Saved best checkpoint and validation inputs", path=str(checkpoint_dir)
         )

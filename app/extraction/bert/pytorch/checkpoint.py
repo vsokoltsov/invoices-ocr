@@ -26,6 +26,7 @@ class BertPytorchCheckpoint:
         epoch,
         max_length,
         test_records=None,
+        decoder="token_argmax",
     ):
         self.directory.mkdir(parents=True, exist_ok=True)
         model.bert.config.save_pretrained(self.directory / "encoder")
@@ -35,14 +36,36 @@ class BertPytorchCheckpoint:
             self.directory / "model.pt",
         )
         self.save_records(
-            "validation", records, frame, schema, epoch=epoch, max_length=max_length
+            "validation",
+            records,
+            frame,
+            schema,
+            epoch=epoch,
+            max_length=max_length,
+            decoder=decoder,
         )
         if test_records is not None:
             self.save_records(
-                "test", test_records, frame, schema, epoch=epoch, max_length=max_length
+                "test",
+                test_records,
+                frame,
+                schema,
+                epoch=epoch,
+                max_length=max_length,
+                decoder=decoder,
             )
 
-    def save_records(self, split, records, frame, schema, *, epoch, max_length):
+    def save_records(
+        self,
+        split,
+        records,
+        frame,
+        schema,
+        *,
+        epoch,
+        max_length,
+        decoder="token_argmax",
+    ):
         """Save evaluation inputs with their original OCR word offsets."""
         if split not in {"validation", "test"}:
             raise ValueError("Split must be validation or test")
@@ -75,6 +98,7 @@ class BertPytorchCheckpoint:
             "max_length": int(max_length),
             "field_to_entity": schema.field_to_entity,
             "records": saved_records,
+            "decoder": decoder,
         }
         (self.directory / f"{split}.json").write_text(
             json.dumps(
