@@ -138,6 +138,17 @@ class BertPytorchDebugConfig(BaseSettings):
     DEVICE: str = Field(
         default="auto", description="Inference device: auto, cpu, cuda, or mps."
     )
+    SPLIT: str = Field(
+        default="validation", description="Evaluation split: validation or test."
+    )
+    DATASET_PATH: str = Field(
+        default="",
+        description="Original prepared DocILE dataset for checkpoints without saved test records.",
+    )
+    RANDOM_SEED: int = Field(
+        default=42,
+        description="Original training split seed for rebuilding test records.",
+    )
 
 
 class BertConfig(BaseSettings):

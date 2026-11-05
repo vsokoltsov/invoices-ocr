@@ -120,6 +120,9 @@ def debug_bert_pytorch(args: argparse.Namespace, settings: Settings) -> None:
             checkpoint_dir=args.CHECKPOINT_DIR,
             output_dir=args.OUTPUT_DIR,
             device=args.DEVICE,
+            split=args.SPLIT,
+            dataset_path=args.DATASET_PATH,
+            random_seed=args.RANDOM_SEED,
         )
     )
     print(path)

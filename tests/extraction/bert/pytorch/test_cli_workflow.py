@@ -250,7 +250,87 @@ def test_docile_cli_download_and_training_use_shared_dataset(
         assert all(
             e["line_item_id"] == 7 for r in snapshot["records"] for e in r["entities"]
         )
-    # Debug must use saved inputs, with no access to the original dataset.
+    assert (checkpoint / "test.json").is_file()
+    saved_test_dir = tmp_path / "test-comparison"
+    cli.main(
+        [
+            "debug",
+            "bert-pytorch",
+            "--checkpoint-dir",
+            str(checkpoint),
+            "--output-dir",
+            str(saved_test_dir),
+            "--device",
+            "cpu",
+            "--split",
+            "test",
+        ]
+    )
+    test_comparison = pd.read_csv(saved_test_dir / "decoder_comparison.csv")
+    assert test_comparison["split"].eq("test").all()
+    # An older checkpoint can reconstruct test membership from unchanged inputs.
+    (checkpoint / "test.json").unlink()
+    with pytest.raises(ValueError, match="No saved test split"):
+        cli.main(
+            [
+                "debug",
+                "bert-pytorch",
+                "--checkpoint-dir",
+                str(checkpoint),
+                "--output-dir",
+                str(tmp_path / "missing-test"),
+                "--device",
+                "cpu",
+                "--split",
+                "test",
+            ]
+        )
+    rebuilt_dir = tmp_path / "rebuilt-test"
+    cli.main(
+        [
+            "debug",
+            "bert-pytorch",
+            "--checkpoint-dir",
+            str(checkpoint),
+            "--output-dir",
+            str(rebuilt_dir),
+            "--device",
+            "cpu",
+            "--split",
+            "test",
+            "--dataset-path",
+            str(output),
+            "--random-seed",
+            "42",
+        ]
+    )
+    pd.testing.assert_frame_equal(
+        pd.read_csv(rebuilt_dir / "decoder_comparison.csv"), test_comparison
+    )
+    snapshot["records"][0]["text"] += " changed"
+    (checkpoint / "validation.json").write_text(json.dumps(snapshot))
+    with pytest.raises(ValueError, match="validation split differs"):
+        cli.main(
+            [
+                "debug",
+                "bert-pytorch",
+                "--checkpoint-dir",
+                str(checkpoint),
+                "--output-dir",
+                str(tmp_path / "mismatched-test"),
+                "--device",
+                "cpu",
+                "--split",
+                "test",
+                "--dataset-path",
+                str(output),
+            ]
+        )
+    snapshot["records"][0]["text"] = snapshot["records"][0]["text"].removesuffix(
+        " changed"
+    )
+    (checkpoint / "validation.json").write_text(json.dumps(snapshot))
+    # Validation debug must use saved inputs, with no access to the original dataset.
     output.unlink()
     debug_dir = tmp_path / "comparison"
     cli.main(

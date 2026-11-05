@@ -29,6 +29,9 @@ class BertPytorchDebugParams:
     checkpoint_dir: str
     output_dir: str
     device: str = "auto"
+    split: str = "validation"
+    dataset_path: str = ""
+    random_seed: int = 42
 
 
 @dataclass(frozen=True, slots=True)
