@@ -3,6 +3,9 @@ from functools import lru_cache
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from app.aggregates.bert.params import DatasetName
+from app.datasets.docile.enums import DocileSplit
+
 
 class DocileInvoicesConfig(BaseSettings):
     model_config = SettingsConfigDict(
@@ -11,21 +14,33 @@ class DocileInvoicesConfig(BaseSettings):
         env_file_encoding="utf-8",
         extra="ignore",
     )
-    TOKEN: str =  Field(
+    TOKEN: str = Field(
+        default="",
+        repr=False,
         description="Token for retrieving docile archive",
     )
     DESTINATION_PATH: str = Field(
-        default="./data/raw/kaggle-invoices",
+        default="./data/raw/docile",
         description="Directory for the extracted dataset archive.",
     )
-    ARCHIVE_PATH: str = Field(
-        default="./data/raw/invoices-ocr.zip",
-        description="Dataset archive path; an existing archive is reused.",
-    )
     OUTPUT_PATH: str = Field(
-        default="./data/raw/kaggle-invoices.csv",
-        description="Path for the prepared dataset CSV.",
+        default="./data/raw/docile.parquet",
+        description="Prepared dataset output, with .parquet or .csv extension.",
     )
+    SPLIT: DocileSplit = Field(
+        default=DocileSplit.TRAINVAL,
+        description="Document split to prepare: train, val, trainval, or test.",
+    )
+    USE_SNAPPED_BOXES: bool = Field(
+        default=True,
+        description="Use OCR boxes snapped to the text when available.",
+    )
+    MINIMUM_ARCHIVE_BYTES: int = Field(
+        default=100_000_000,
+        ge=0,
+        description="Minimum accepted archive size in bytes.",
+    )
+
 
 class KaggleInvoicesConfig(BaseSettings):
     model_config = SettingsConfigDict(
@@ -47,7 +62,6 @@ class KaggleInvoicesConfig(BaseSettings):
         default="./data/raw/kaggle-invoices.csv",
         description="Path for the prepared dataset CSV.",
     )
-    
 
 
 class BertPytorchConfig(BaseSettings):
@@ -60,7 +74,7 @@ class BertPytorchConfig(BaseSettings):
 
     DATASET_PATH: str = Field(
         default="./data/raw/kaggle-invoices.csv",
-        description="Existing prepared dataset CSV; training fails if it is missing.",
+        description="Existing prepared CSV or DocILE Parquet; fail if it is missing.",
     )
     RESULT_FILENAME: str = Field(
         default="bert_training_pipeline",
@@ -186,7 +200,8 @@ class Settings(BaseSettings):
     KAGGLE_INVOICES: KaggleInvoicesConfig = Field(default_factory=KaggleInvoicesConfig)
     DOCILE: DocileInvoicesConfig = Field(default_factory=DocileInvoicesConfig)
     RANDOM_SEED: int = 42
-    DOCILE_TOKEN: str
+    DATASET_NAME: DatasetName = DatasetName.KAGGLE_INVOICES
+    DOCILE_TOKEN: str = Field(default="", repr=False)
 
 
 @lru_cache
