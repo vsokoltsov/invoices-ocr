@@ -63,6 +63,7 @@ def test_token_exports_select_character_region_and_include_role_probabilities(
     frames = [pd.read_csv(path, keep_default_na=False) for path in paths]
     for frame, window in zip(frames, windows, strict=True):
         assert frame["epoch"].unique().tolist() == [7]
+        assert frame["record_split"].unique().tolist() == ["validation"]
         assert frame["window_index"].unique().tolist() == [window]
         assert (frame["actual"] == "IGNORED").sum() == 2
         assert frame["predicted"].eq("B-SELLER_ADDRESS").all()
@@ -117,3 +118,47 @@ def test_unmatched_debug_document_does_not_export_another_record(
     )
     assert not list(tmp_path.glob("tokens_*.csv"))
     assert "document_found=False" in capsys.readouterr().out
+
+
+def test_training_debug_target_is_exported_without_changing_validation_metrics(
+    tmp_path,
+    fast_tokenizer,
+):
+    schema = InvoiceLabelSchema()
+    validation = {
+        "document_id": "validation-doc",
+        "text": "Acme",
+        "entities": [
+            {"start": 0, "end": 4, "label": "invoice.client_address", "text": "Acme"}
+        ],
+    }
+    text = "prefix " * 12 + "Acme Corporation"
+    start = text.index("Acme")
+    training = {
+        "document_id": "train-debug",
+        "text": text,
+        "entities": [
+            {
+                "start": start,
+                "end": len(text),
+                "label": "invoice.client_address",
+                "text": text[start:],
+            }
+        ],
+    }
+    inspector = EntityErrorInspector(
+        AddressTagger(schema),
+        fast_tokenizer,
+        schema,
+        torch.device("cpu"),
+        max_length=8,
+        debug_document_id="train-debug",
+        debug_start=start,
+        debug_end=len(text),
+        training_records=[training],
+    )
+    report, errors = inspector.run([validation], tmp_path, epoch=1)
+    tokens = pd.read_csv(tmp_path / "tokens_train-debug_window_002.csv")
+    assert tokens["record_split"].unique().tolist() == ["train"]
+    assert report.loc["CLIENT_ADDRESS", "support"] == 1
+    assert set(errors["document_id"]) == {"validation-doc"}
