@@ -17,6 +17,7 @@ from app.extraction.bert.pytorch.builder import InvoiceRecordBuilder
 from app.extraction.bert.pytorch.checkpoint import BertPytorchCheckpoint
 from app.extraction.bert.pytorch.datasets import InvoiceDataset
 from app.extraction.bert.pytorch.docile.builder import DocileRecordBuilder
+from app.extraction.bert.pytorch.docile.item_builder import DocileItemRecordBuilder
 from app.extraction.bert.pytorch.enums import InvoiceBIOLabel, InvoiceField
 from app.extraction.bert.pytorch.inspector import EntityErrorInspector
 from app.extraction.bert.pytorch.model import BertFieldExtractor
@@ -74,8 +75,16 @@ class BertPytorchPipeline:
         return frame
 
     @staticmethod
-    def prepare_records(df: pd.DataFrame, dataset_type: DatasetName):
+    def prepare_records(
+        df: pd.DataFrame, dataset_type: DatasetName, *, line_items_only: bool = False
+    ):
         """Use geometry for DocILE and text alignment for Kaggle invoices."""
+        if line_items_only:
+            if dataset_type != DatasetName.DOCILE:
+                raise ValueError("--line-items-only requires --dataset-name docile")
+            builder = DocileItemRecordBuilder()
+            records, rejected = builder.build(df)
+            return records, rejected, builder.label_schema
         label_schema = InvoiceLabelSchema()
         if dataset_type == DatasetName.DOCILE:
             label_schema = InvoiceLabelSchema(
@@ -139,6 +148,8 @@ class BertPytorchPipeline:
 
     def run(self, params: BertPytorchParams):
         """Train on accepted invoices and evaluate the best weights on held-out data."""
+        if params.line_items_only and params.dataset_type != DatasetName.DOCILE:
+            raise ValueError("--line-items-only requires --dataset-name docile")
         df = self.load_frame(params)
 
         random.seed(params.random_seed)
@@ -167,11 +178,16 @@ class BertPytorchPipeline:
             label_pad_token_id=-100,
         )
 
-        records, rejected, label_schema = self.prepare_records(df, params.dataset_type)
+        records, rejected, label_schema = self.prepare_records(
+            df, params.dataset_type, line_items_only=params.line_items_only
+        )
         logger.info(
             "bert_pytorch_records",
             accepted=len(records),
             rejected=len(rejected),
+            training_target="line_items"
+            if params.line_items_only
+            else "invoice_fields",
             amount_due_suppressed_words=sum(
                 record.get("amount_due_suppressed_words", 0) for record in records
             ),

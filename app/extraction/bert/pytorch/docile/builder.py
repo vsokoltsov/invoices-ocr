@@ -23,15 +23,17 @@ class DocileRecordBuilder:
 
     label_schema: InvoiceLabelSchema = field(default_factory=InvoiceLabelSchema)
 
+    def _assign_candidates(self, row):
+        return assign_candidate_labels(
+            row, target_fields=self.label_schema.field_to_entity.keys()
+        )
+
     def build(self, df: pd.DataFrame) -> tuple[list[dict], list[dict]]:
         records = []
         rejected = []
 
         for row_index, row in df.iterrows():
-            word_candidates, annotations = assign_candidate_labels(
-                row,
-                target_fields=self.label_schema.field_to_entity.keys(),
-            )
+            word_candidates, annotations = self._assign_candidates(row)
 
             resolved_words = resolve_name_address_nesting(word_candidates)
             resolved_words = resolve_total_amount_due_overlap(resolved_words)

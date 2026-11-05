@@ -1,7 +1,8 @@
 from collections import Counter
 from collections.abc import Collection
-from typing import TypedDict
+from typing import NotRequired, TypedDict
 
+from app.extraction.bert.pytorch.docile.item_annotations import DocileItemAnnotations
 from app.extraction.bert.pytorch.enums import InvoiceField
 
 
@@ -9,6 +10,7 @@ class CandidateLabel(TypedDict):
     label: str
     occurrence: int
     annotation_id: int
+    line_item_id: NotRequired[int]
 
 
 class CandidateWord(TypedDict):
@@ -98,7 +100,9 @@ def find_spans(row):
     return spans
 
 
-def assign_candidate_labels(row, target_fields: Collection[str] | None = None):
+def assign_candidate_labels(
+    row, target_fields: Collection[str] | None = None, *, line_items_only: bool = False
+):
     """Project selected annotation fields onto OCR words using their boxes."""
     if target_fields is None:
         target_fields = TARGET_FIELDS
@@ -114,9 +118,9 @@ def assign_candidate_labels(row, target_fields: Collection[str] | None = None):
         for index, word in enumerate(words)
     ]
 
-    annotations = []
-
-    for section in SECTIONS:
+    fields: list[dict] = []
+    sections = () if line_items_only else SECTIONS
+    for section in sections:
         for name, field in row["json_data"].get(section, {}).items():
             path = f"{section}.{name}"
 
@@ -126,33 +130,43 @@ def assign_candidate_labels(row, target_fields: Collection[str] | None = None):
             for occurrence, (bbox, page) in enumerate(
                 zip(field["bbox"], field["pages"], strict=True)
             ):
-                annotation_id = len(annotations)
-                matched_words = 0
-
-                for word_index, word in enumerate(words):
-                    if not word_inside_box(word, bbox, page):
-                        continue
-
-                    word_candidates[word_index]["candidates"].append(
-                        {
-                            "label": path,
-                            "occurrence": occurrence,
-                            "annotation_id": annotation_id,
-                        }
-                    )
-
-                    matched_words += 1
-
-                annotations.append(
+                fields.append(
                     {
-                        "annotation_id": annotation_id,
                         "field": path,
                         "occurrence": occurrence,
+                        "bbox": bbox,
                         "page": int(page),
                         "expected": field["source_values"][occurrence],
-                        "matched_words": matched_words,
                     }
                 )
+
+    if line_items_only:
+        fields.extend(
+            DocileItemAnnotations(target_fields).iter_annotations(row["json_data"])
+        )
+
+    annotations = []
+    for annotation_id, annotation in enumerate(fields):
+        matched_words = 0
+        for word_index, word in enumerate(words):
+            if not word_inside_box(word, annotation["bbox"], annotation["page"]):
+                continue
+            candidate: CandidateLabel = {
+                "label": annotation["field"],
+                "occurrence": annotation["occurrence"],
+                "annotation_id": annotation_id,
+            }
+            if "line_item_id" in annotation:
+                candidate["line_item_id"] = int(annotation["line_item_id"])
+            word_candidates[word_index]["candidates"].append(candidate)
+            matched_words += 1
+        annotations.append(
+            {
+                **{key: value for key, value in annotation.items() if key != "bbox"},
+                "annotation_id": annotation_id,
+                "matched_words": matched_words,
+            }
+        )
 
     return word_candidates, annotations
 
@@ -190,17 +204,24 @@ def deduplicate_candidate_labels(resolved_words):
         for candidate in word["candidates"]:
             label = candidate["label"]
 
+            item_metadata = (
+                {"line_item_id": candidate["line_item_id"]}
+                if "line_item_id" in candidate
+                else {}
+            )
             grouped = by_label.setdefault(
-                label,
+                (label, candidate.get("line_item_id")),
                 {
                     "label": label,
                     "sources": [],
+                    **item_metadata,
                 },
             )
 
             source = {
                 "annotation_id": candidate["annotation_id"],
                 "occurrence": candidate["occurrence"],
+                **item_metadata,
             }
 
             if source not in grouped["sources"]:
@@ -280,6 +301,7 @@ def build_spans(ocr_text, deduplicated_words):
 
         key = (
             candidate["label"],
+            candidate.get("line_item_id"),
             int(word["page"]),
             source_key,
         )
@@ -302,6 +324,11 @@ def build_spans(ocr_text, deduplicated_words):
                     "label": candidate["label"],
                     "page": int(word["page"]),
                     "sources": [source.copy() for source in candidate["sources"]],
+                    **(
+                        {"line_item_id": candidate["line_item_id"]}
+                        if "line_item_id" in candidate
+                        else {}
+                    ),
                 }
             )
 
@@ -340,6 +367,16 @@ def find_remaining_issues(deduplicated_words, annotations):
                     "end": int(word["end"]),
                     "text": word["text"],
                     "labels": [candidate["label"] for candidate in candidates],
+                    **(
+                        {
+                            "line_item_ids": [
+                                candidate.get("line_item_id")
+                                for candidate in candidates
+                            ]
+                        }
+                        if any("line_item_id" in candidate for candidate in candidates)
+                        else {}
+                    ),
                 }
             )
 

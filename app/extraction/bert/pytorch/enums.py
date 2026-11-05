@@ -38,3 +38,11 @@ FIELD_TO_ENTITY: dict[str, str] = {
     InvoiceField.SUBTOTAL_TAX.value: InvoiceBIOLabel.TAX.value,
     InvoiceField.SUBTOTAL_TOTAL.value: InvoiceBIOLabel.TOTAL.value,
 }
+
+
+ITEM_FIELD_TO_ENTITY: dict[str, str] = {
+    "items.description": "ITEM_DESCRIPTION",
+    "items.quantity": "ITEM_QUANTITY",
+    "items.unit_price": "ITEM_UNIT_PRICE_GROSS",
+    "items.total_price": "ITEM_AMOUNT_GROSS",
+}
