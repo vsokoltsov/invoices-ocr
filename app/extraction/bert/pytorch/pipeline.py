@@ -1,3 +1,4 @@
+import json
 import random
 from dataclasses import dataclass
 from pathlib import Path
@@ -11,9 +12,10 @@ from torch import nn
 from torch.utils.data import DataLoader
 from transformers import AutoTokenizer, DataCollatorForTokenClassification, set_seed
 
-from app.aggregates.bert.params import BertPytorchParams
+from app.aggregates.bert.params import BertPytorchParams, DatasetName
 from app.extraction.bert.pytorch.builder import InvoiceRecordBuilder
 from app.extraction.bert.pytorch.datasets import InvoiceDataset
+from app.extraction.bert.pytorch.docile.builder import DocileRecordBuilder
 from app.extraction.bert.pytorch.model import BertFieldExtractor
 from app.extraction.bert.pytorch.schema import InvoiceLabelSchema
 from app.extraction.bert.pytorch.spans import (
@@ -29,24 +31,111 @@ logger = structlog.get_logger()
 
 @dataclass
 class BertPytorchPipeline:
+    @staticmethod
+    def load_frame(params: BertPytorchParams) -> pd.DataFrame:
+        """Read prepared data without downloading archives or changing OCR offsets."""
+        path = Path(params.dataset_path).expanduser().resolve()
+        if not path.is_file():
+            raise FileNotFoundError(f"Prepared dataset CSV not found: {path}")
+        dataset_type = DatasetName(params.dataset_type)
+        if dataset_type == DatasetName.DOCILE and path.suffix.lower() == ".parquet":
+            frame = pd.read_parquet(path)
+        elif path.suffix.lower() == ".csv":
+            frame = pd.read_csv(
+                path,
+                keep_default_na=False,
+                dtype={
+                    "ocred_text": str,
+                    "ocr_text": str,
+                    "document_id": str,
+                    "json_data": str,
+                },
+            )
+        else:
+            formats = "CSV or Parquet" if dataset_type == DatasetName.DOCILE else "CSV"
+            raise ValueError(f"Prepared dataset must be a {formats} file: {path}")
+        required = (
+            {"document_id", "ocr_text", "text_with_boxes", "json_data"}
+            if dataset_type == DatasetName.DOCILE
+            else {"ocred_text", "json_data"}
+        )
+        if missing := required - set(frame.columns):
+            raise ValueError(f"Dataset CSV is missing columns: {sorted(missing)}")
+        if dataset_type == DatasetName.DOCILE:
+            if frame["document_id"].duplicated().any():
+                raise ValueError("DocILE document IDs must be unique")
+            for column in ("text_with_boxes", "json_data"):
+                frame[column] = frame[column].map(
+                    lambda value: json.loads(value) if isinstance(value, str) else value
+                )
+        return frame
+
+    @staticmethod
+    def prepare_records(df: pd.DataFrame, dataset_type: DatasetName):
+        """Use geometry for DocILE and text alignment for Kaggle invoices."""
+        label_schema = InvoiceLabelSchema()
+        if dataset_type == DatasetName.DOCILE:
+            label_schema = InvoiceLabelSchema(
+                field_to_entity={
+                    **label_schema.field_to_entity,
+                    "invoice.due_date": "DUE_DATE",
+                    "payment_instructions.payment_terms": "PAYMENT_TERMS",
+                }
+            )
+            records, rejected = DocileRecordBuilder(label_schema).build(df)
+        else:
+            normalizer = Normalizer()
+            numeric = NumericField(normalizer=normalizer)
+            matcher = OCRSpanMatcher(
+                summary_span=OCRSummarySpan(normalizer=normalizer),
+                normalizer=normalizer,
+                numeric=numeric,
+            )
+            records, rejected = InvoiceRecordBuilder(
+                span_matcher=matcher,
+                numeric=numeric,
+                normalizer=normalizer,
+            ).build(df)
+        return records, rejected, label_schema
+
+    @staticmethod
+    def split_records(records: list[dict], df: pd.DataFrame, params: BertPytorchParams):
+        """Keep official DocILE validation documents out of training and tuning.
+
+        Use part of the official training set for tuning. Prepared data without
+        official split metadata uses a seeded 80/10/10 document split.
+        """
+        if params.dataset_type == DatasetName.DOCILE and "split" in df:
+            membership = dict(zip(df["document_id"], df["split"], strict=True))
+            if set(membership.values()) - {"train", "val"}:
+                raise ValueError("DocILE split values must be 'train' or 'val'")
+            train = [r for r in records if membership[r["document_id"]] == "train"]
+            test = [r for r in records if membership[r["document_id"]] == "val"]
+            if len(train) < 2 or not test:
+                raise ValueError(
+                    "Accepted DocILE records must include train and val documents"
+                )
+            train, validation = train_test_split(
+                train,
+                test_size=0.1,
+                random_state=params.random_seed,
+            )
+            return train, validation, test
+        train, remaining = train_test_split(
+            records,
+            test_size=0.2,
+            random_state=params.random_seed,
+        )
+        validation, test = train_test_split(
+            remaining,
+            test_size=0.5,
+            random_state=params.random_seed,
+        )
+        return train, validation, test
+
     def run(self, params: BertPytorchParams):
         """Train on accepted invoices and evaluate the best weights on held-out data."""
-        dataset_path = Path(params.dataset_path).expanduser().resolve()
-        if not dataset_path.is_file():
-            raise FileNotFoundError(f"Prepared dataset CSV not found: {dataset_path}")
-        if dataset_path.suffix.lower() != ".csv":
-            raise ValueError(f"Prepared dataset must be a CSV file: {dataset_path}")
-
-        df = pd.read_csv(
-            dataset_path,
-            keep_default_na=False,
-            dtype={"ocred_text": str, "json_data": str},
-        )
-        missing_columns = {"ocred_text", "json_data"} - set(df.columns)
-        if missing_columns:
-            raise ValueError(
-                f"Dataset CSV is missing columns: {sorted(missing_columns)}"
-            )
+        df = self.load_frame(params)
 
         random.seed(params.random_seed)
         np.random.seed(params.random_seed)
@@ -73,22 +162,7 @@ class BertPytorchPipeline:
             label_pad_token_id=-100,
         )
 
-        normalizer = Normalizer()
-        numeric_field_handler = NumericField(normalizer=normalizer)
-        summary_span = OCRSummarySpan(normalizer=normalizer)
-        span_matcher = OCRSpanMatcher(
-            summary_span=summary_span,
-            normalizer=normalizer,
-            numeric=numeric_field_handler,
-        )
-        builder = InvoiceRecordBuilder(
-            span_matcher=span_matcher,
-            numeric=numeric_field_handler,
-            normalizer=normalizer,
-        )
-        label_schema = InvoiceLabelSchema()
-        logger.info("Prepare training spans", dataset_path=str(dataset_path))
-        records, rejected = builder.build(df)
+        records, rejected, label_schema = self.prepare_records(df, params.dataset_type)
         logger.info(
             "bert_pytorch_records", accepted=len(records), rejected=len(rejected)
         )
@@ -106,18 +180,17 @@ class BertPytorchPipeline:
         criterion = nn.CrossEntropyLoss(ignore_index=-100)
 
         logger.info("4. Split data and init datasets")
-        train_records, remaining_records = train_test_split(
-            records,
-            test_size=0.2,
-            shuffle=True,
-            random_state=params.random_seed,
+        train_records, validation_records, test_records = self.split_records(
+            records, df, params
         )
-
-        validation_records, test_records = train_test_split(
-            remaining_records,
-            test_size=0.5,
-            shuffle=True,
-            random_state=params.random_seed,
+        logger.info(
+            "bert_pytorch_split",
+            source="official_docile"
+            if params.dataset_type == DatasetName.DOCILE and "split" in df
+            else "random",
+            training=len(train_records),
+            validation=len(validation_records),
+            final_evaluation=len(test_records),
         )
         train_dataset = InvoiceDataset(
             train_records,
