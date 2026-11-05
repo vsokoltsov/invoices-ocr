@@ -1,6 +1,5 @@
 import json
 from copy import deepcopy
-from pathlib import Path
 from unittest.mock import Mock
 
 import pandas as pd
@@ -112,9 +111,21 @@ def test_invalid_manifest_is_rejected(tmp_path, rules):
         DocileAnnotationCorrections.from_file(write_rules(tmp_path, rules))
 
 
-def test_reviewed_address_rules_preserve_the_logo_annotation():
-    path = Path(__file__).resolve().parents[3] / "config/docile_corrections.json"
-    rules = DocileAnnotationCorrections.from_file(path)
+def test_reviewed_address_rules_preserve_the_logo_annotation(tmp_path):
+    rules = DocileAnnotationCorrections.from_file(
+        write_rules(
+            tmp_path,
+            [
+                correction(
+                    document_id="26f0e3a78e26450b9b47dd81",
+                    page=page,
+                    expected_text="3646 Momentum Place\nChicago, IL 60689-5336",
+                    expected_bbox=[0.64, 0.15, 0.79, 0.19],
+                )
+                for page in (0, 1)
+            ],
+        )
+    )
     fields = [
         {
             "fieldtype": "vendor_name",
