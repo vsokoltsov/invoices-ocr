@@ -16,6 +16,7 @@ from app.aggregates.bert.params import BertPytorchParams, DatasetName
 from app.extraction.bert.pytorch.builder import InvoiceRecordBuilder
 from app.extraction.bert.pytorch.datasets import InvoiceDataset
 from app.extraction.bert.pytorch.docile.builder import DocileRecordBuilder
+from app.extraction.bert.pytorch.enums import InvoiceBIOLabel, InvoiceField
 from app.extraction.bert.pytorch.inspector import EntityErrorInspector
 from app.extraction.bert.pytorch.model import BertFieldExtractor
 from app.extraction.bert.pytorch.schema import InvoiceLabelSchema
@@ -81,6 +82,7 @@ class BertPytorchPipeline:
                     **label_schema.field_to_entity,
                     "invoice.due_date": "DUE_DATE",
                     "payment_instructions.payment_terms": "PAYMENT_TERMS",
+                    InvoiceField.AMOUNT_DUE.value: InvoiceBIOLabel.AMOUNT_DUE.value,
                 }
             )
             records, rejected = DocileRecordBuilder(label_schema).build(df)
@@ -166,7 +168,12 @@ class BertPytorchPipeline:
 
         records, rejected, label_schema = self.prepare_records(df, params.dataset_type)
         logger.info(
-            "bert_pytorch_records", accepted=len(records), rejected=len(rejected)
+            "bert_pytorch_records",
+            accepted=len(records),
+            rejected=len(rejected),
+            amount_due_suppressed_words=sum(
+                record.get("amount_due_suppressed_words", 0) for record in records
+            ),
         )
         if len(records) < 10:
             raise ValueError("At least 10 accepted invoices are required for the split")

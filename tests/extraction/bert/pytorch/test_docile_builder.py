@@ -3,11 +3,13 @@ import re
 import pandas as pd
 import pytest
 
+from app.aggregates.bert.params import DatasetName
 from app.extraction.bert.pytorch.datasets import InvoiceDataset
 from app.extraction.bert.pytorch.docile.builder import (
     DocileRecordBuilder,
     prepare_docile_records,
 )
+from app.extraction.bert.pytorch.pipeline import BertPytorchPipeline
 from app.extraction.bert.pytorch.schema import InvoiceLabelSchema
 
 
@@ -144,3 +146,79 @@ def test_builder_rejects_missing_words_and_invalid_character_offsets(failure):
     assert not records
     assert rejected[0]["document_id"] == "doc-1"
     assert failure in {issue["status"] for issue in rejected[0]["issues"]}
+
+
+@pytest.mark.parametrize(
+    "total,due,expected,suppressed",
+    [
+        (
+            (1, 1),
+            (0, 0),
+            [("other_fields.amount_due", "prefix"), ("subtotal.total", "suffix")],
+            0,
+        ),
+        ((0, 1), (0, 1), [("subtotal.total", "prefix suffix")], 2),
+        (
+            (1, 1),
+            (0, 1),
+            [("other_fields.amount_due", "prefix"), ("subtotal.total", "suffix")],
+            1,
+        ),
+    ],
+)
+def test_pipeline_labels_amount_due_separately_and_keeps_total_priority(
+    fast_tokenizer,
+    total,
+    due,
+    expected,
+    suppressed,
+):
+    frame = docile_frame(
+        "prefix suffix",
+        {
+            "subtotal.total": total,
+            "other_fields.amount_due": due,
+            "other_fields.amount_paid": (0, 0),
+        },
+    )
+    records, rejected, schema = BertPytorchPipeline.prepare_records(
+        frame, DatasetName.DOCILE
+    )
+    assert not rejected
+    assert schema.num_labels == 25
+    assert schema.entity_to_field["AMOUNT_DUE"] == "other_fields.amount_due"
+    assert [(e["label"], e["text"]) for e in records[0]["entities"]] == expected
+    assert records[0]["amount_due_suppressed_words"] == suppressed
+    dataset = InvoiceDataset(
+        records, fast_tokenizer, schema.label2id, schema.field_to_entity
+    )
+    labels = [schema.id2label[label] for label in dataset[0]["labels"] if label != -100]
+    assert labels == (
+        ["B-TOTAL", "I-TOTAL"] if suppressed == 2 else ["B-AMOUNT_DUE", "B-TOTAL"]
+    )
+    assert "other_fields.amount_paid" not in schema.field_to_entity
+
+
+def test_amount_due_priority_does_not_hide_missing_or_unresolved_annotations():
+    missing = docile_frame(
+        "prefix suffix", {"subtotal.total": (0, 0), "other_fields.amount_due": (1, 1)}
+    )
+    missing.iloc[0]["json_data"]["other_fields"]["amount_due"]["pages"] = [9]
+    conflicts = docile_frame(
+        "prefix suffix",
+        {
+            "subtotal.total": (0, 0),
+            "other_fields.amount_due": (0, 1),
+            "invoice.client_name": (1, 1),
+        },
+    )
+    for frame, status in [(missing, "missing_span"), (conflicts, "overlap")]:
+        records, rejected, _ = BertPytorchPipeline.prepare_records(
+            frame, DatasetName.DOCILE
+        )
+        assert not records
+        assert status in {issue["status"] for issue in rejected[0]["issues"]}
+
+
+def test_default_schema_keeps_amount_due_out_of_kaggle_labels():
+    assert "other_fields.amount_due" not in InvoiceLabelSchema().field_to_entity

@@ -8,6 +8,7 @@ from app.extraction.bert.pytorch.docile.spans import (
     deduplicate_candidate_labels,
     find_remaining_issues,
     resolve_name_address_nesting,
+    resolve_total_amount_due_overlap,
 )
 from app.extraction.bert.pytorch.schema import InvoiceLabelSchema
 
@@ -33,6 +34,7 @@ class DocileRecordBuilder:
             )
 
             resolved_words = resolve_name_address_nesting(word_candidates)
+            resolved_words = resolve_total_amount_due_overlap(resolved_words)
             deduplicated_words = deduplicate_candidate_labels(resolved_words)
 
             spans, ignored_regions = build_spans(
@@ -77,6 +79,10 @@ class DocileRecordBuilder:
                         "text": row["ocr_text"],
                         "entities": spans,
                         "ignored_regions": ignored_regions,
+                        "amount_due_suppressed_words": sum(
+                            bool(word["suppressed_amount_due"])
+                            for word in deduplicated_words
+                        ),
                     }
                 )
 

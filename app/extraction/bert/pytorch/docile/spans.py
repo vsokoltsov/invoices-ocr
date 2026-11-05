@@ -2,6 +2,8 @@ from collections import Counter
 from collections.abc import Collection
 from typing import TypedDict
 
+from app.extraction.bert.pytorch.enums import InvoiceField
+
 
 class CandidateLabel(TypedDict):
     label: str
@@ -16,7 +18,7 @@ class CandidateWord(TypedDict):
     candidates: list[CandidateLabel]
 
 
-SECTIONS = ("invoice", "payment_instructions", "subtotal")
+SECTIONS = ("invoice", "payment_instructions", "subtotal", "other_fields")
 TARGET_FIELDS = {
     "invoice.client_name",
     "invoice.client_address",
@@ -29,6 +31,7 @@ TARGET_FIELDS = {
     "payment_instructions.account_number",
     "subtotal.tax",
     "subtotal.total",
+    InvoiceField.AMOUNT_DUE.value,
 }
 
 NAME_TO_ADDRESS = {
@@ -213,6 +216,36 @@ def deduplicate_candidate_labels(resolved_words):
     return deduplicated_words
 
 
+def resolve_total_amount_due_overlap(word_candidates):
+    """Keep TOTAL on shared words and retain suppressed AMOUNT_DUE sources.
+
+    The single-label classifier can supervise only one field per word. Distinct
+    AMOUNT_DUE words remain supervised; suppressed sources remain available for
+    annotation accounting.
+    """
+    resolved_words = []
+    for word in word_candidates:
+        has_total = any(
+            candidate["label"] == InvoiceField.SUBTOTAL_TOTAL.value
+            for candidate in word["candidates"]
+        )
+        suppressed = []
+        candidates = []
+        for candidate in word["candidates"]:
+            if has_total and candidate["label"] == InvoiceField.AMOUNT_DUE.value:
+                suppressed.append(candidate.copy())
+            else:
+                candidates.append(candidate.copy())
+        resolved_words.append(
+            {
+                **word,
+                "candidates": candidates,
+                "suppressed_amount_due": suppressed,
+            }
+        )
+    return resolved_words
+
+
 def build_spans(ocr_text, deduplicated_words):
     spans = []
     ignored_regions = []
@@ -284,11 +317,18 @@ def build_spans(ocr_text, deduplicated_words):
 def find_remaining_issues(deduplicated_words, annotations):
     issues = []
     supervised_counts = Counter()
+    suppressed_counts = Counter()
 
     if not annotations:
         return [{"status": "no_selected_annotations"}]
 
     for word in deduplicated_words:
+        suppressed_counts.update(
+            {
+                candidate["annotation_id"]
+                for candidate in word.get("suppressed_amount_due", [])
+            }
+        )
         candidates = word["candidates"]
 
         if len(candidates) > 1:
@@ -315,6 +355,11 @@ def find_remaining_issues(deduplicated_words, annotations):
         if annotation["matched_words"] == 0:
             status = "missing_span"
         elif supervised_counts[annotation_id] == 0:
+            if (
+                annotation["field"] == InvoiceField.AMOUNT_DUE.value
+                and suppressed_counts[annotation_id] == annotation["matched_words"]
+            ):
+                continue
             status = "no_supervised_words"
         else:
             continue

@@ -11,6 +11,7 @@ class InvoiceField(StrEnum):
     ACCOUNT_NUMBER = "payment_instructions.account_number"
     SUBTOTAL_TAX = "subtotal.tax"
     SUBTOTAL_TOTAL = "subtotal.total"
+    AMOUNT_DUE = "other_fields.amount_due"
 
 
 class InvoiceBIOLabel(StrEnum):
@@ -23,6 +24,7 @@ class InvoiceBIOLabel(StrEnum):
     ACCOUNT_NUMBER = "ACCOUNT_NUMBER"
     TAX = "TAX"
     TOTAL = "TOTAL"
+    AMOUNT_DUE = "AMOUNT_DUE"
 
 
 FIELD_TO_ENTITY: dict[str, str] = {
