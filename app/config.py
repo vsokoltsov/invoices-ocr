@@ -4,6 +4,7 @@ from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.aggregates.bert.params import DatasetName
+from app.aggregates.layoutlm.params import LayoutLMDevice
 from app.datasets.docile.enums import DocileSplit
 
 
@@ -123,6 +124,77 @@ class BertPytorchConfig(BaseSettings):
     WEIGHT_DECAY: float = Field(
         default=0.01,
         description="Optimizer weight-decay coefficient for regularization.",
+    )
+
+
+class LayoutLMConfig(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_prefix="LAYOUTLM_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    DATASET_PATH: str = Field(
+        default="./data/raw/docile.parquet",
+        description="Prepared DocILE dataset containing OCR words, boxes, annotations, and PDF paths.",
+    )
+    MODEL_NAME: str = Field(
+        default="microsoft/layoutlmv3-base",
+        description="Hugging Face checkpoint used to initialize LayoutLMv3.",
+    )
+    OUTPUT_DIR: str = Field(
+        default="./data/interim/layoutlm_experiment",
+        description="Directory for history.csv and training reports.",
+    )
+    CHECKPOINT_PATH: str = Field(
+        default="./data/interim/layoutlm_experiment/best.pt",
+        description="File path for the checkpoint with the best validation entity F1.",
+    )
+    IMAGES_PATH: str = Field(
+        default="./data/interim/docile_images",
+        description="Directory for cached PDF page images.",
+    )
+    NUM_EPOCH: int = Field(default=20, gt=0, description="Number of training epochs.")
+    BATCH_SIZE: int = Field(
+        default=16, gt=0, description="Token windows per training or evaluation batch."
+    )
+    MAX_LENGTH_TOKENS: int = Field(
+        default=512,
+        ge=4,
+        le=512,
+        description="Maximum tokenized window length, including special tokens.",
+    )
+    LEARNING_RATE: float = Field(
+        default=3e-5, gt=0, description="Peak AdamW learning rate."
+    )
+    WEIGHT_DECAY: float = Field(
+        default=0.01, ge=0, description="AdamW weight decay for decay parameter groups."
+    )
+    WARMUP_RATIO: float = Field(
+        default=0.1,
+        ge=0,
+        lt=1,
+        description="Fraction of optimizer steps used for linear warmup before linear decay.",
+    )
+    MIN_WORD_COVERAGE: float = Field(
+        default=0.5,
+        gt=0,
+        le=1,
+        description="Minimum fraction of an OCR word box covered by an annotation.",
+    )
+    DATALOADER_NUM_WORKERS: int = Field(
+        default=0, ge=0, description="Data loader worker processes."
+    )
+    RANDOM_SEED: int = Field(
+        default=42,
+        ge=0,
+        le=2**32 - 1,
+        description="Seed for data splitting and training.",
+    )
+    DEVICE: LayoutLMDevice = Field(
+        default=LayoutLMDevice.AUTO,
+        description="Training device: auto, cpu, cuda, or mps.",
     )
 
 
@@ -246,6 +318,7 @@ class Settings(BaseSettings):
     DEBUG_ARTIFACTS_PATH: str
     BERT: BertConfig = Field(default_factory=BertConfig)
     BERT_PYTORCH: BertPytorchConfig = Field(default_factory=BertPytorchConfig)
+    LAYOUTLM: LayoutLMConfig = Field(default_factory=LayoutLMConfig)
     BERT_PYTORCH_DEBUG: BertPytorchDebugConfig = Field(
         default_factory=BertPytorchDebugConfig
     )
