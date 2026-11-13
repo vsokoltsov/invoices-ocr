@@ -13,8 +13,10 @@ dependencies = [
     "matplot>=0.1.9",
     "numpy>=2.3.5",
     "pandas>=2.3.3",
+    "pipefunc>=0.93.2",
     "pydantic>=2.14.1",
     "pydantic-settings>=2.16.1",
+    "pymupdf>=2.1",
     "rapidfuzz>=3.14.6",
     "requests>=2.32.5",
     "seaborn>=0.13.2",
@@ -56,6 +58,9 @@ known-first-party = ["app"]
 
 [tool.ty.src]
 exclude = ["notebooks"]
+
+[tool.ty.rules]
+invalid-mutable-override = "ignore"
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
