@@ -9,12 +9,14 @@ from app.aggregates.bert.params import (
     BertTrainingParams,
     DatasetName,
 )
+from app.aggregates.layoutlm.params import LayoutLMTrainingParams
 from app.config import (
     BertConfig,
     BertPytorchConfig,
     BertPytorchDebugConfig,
     DocileInvoicesConfig,
     KaggleInvoicesConfig,
+    LayoutLMConfig,
     Settings,
     get_settings,
 )
@@ -37,6 +39,7 @@ def add_config_options(
     | BertPytorchConfig
     | BertPytorchDebugConfig
     | KaggleInvoicesConfig
+    | LayoutLMConfig
     | DocileInvoicesConfig,
     *,
     exclude: tuple[str, ...] = (),
@@ -115,6 +118,25 @@ def train_bert_pytorch(args: argparse.Namespace, settings: Settings) -> None:
         body_only=args.BODY_ONLY,
     )
     BertPytorchPipeline().run(params)
+
+
+def train_layoutlm(args: argparse.Namespace, settings: Settings) -> None:
+    from app.pipelines.layoutlm import training
+
+    config = LayoutLMConfig(
+        _env_file=None,
+        **{name: getattr(args, name) for name in LayoutLMConfig.model_fields},
+    )
+    params = LayoutLMTrainingParams(
+        **{name.lower(): getattr(config, name) for name in LayoutLMConfig.model_fields}
+    )
+    pipeline_class = getattr(training, "LayoutLMTrainingPipeline", None)
+    if pipeline_class is None:
+        raise NotImplementedError(
+            "Implement LayoutLMTrainingPipeline.run(params) in "
+            "app/pipelines/layoutlm/training.py to run LayoutLM training."
+        )
+    pipeline_class().run(params)
 
 
 def debug_bert_pytorch(args: argparse.Namespace, settings: Settings) -> None:
@@ -210,6 +232,14 @@ def build_parser(settings: Settings) -> argparse.ArgumentParser:
         ),
     )
     pytorch.set_defaults(handler=train_bert_pytorch)
+
+    layoutlm = models.add_parser(
+        "layoutlm",
+        help="Train LayoutLMv3 with page images and OCR word boxes",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    add_config_options(layoutlm, settings.LAYOUTLM)
+    layoutlm.set_defaults(handler=train_layoutlm)
 
     debug = commands.add_parser("debug", help="Inspect saved model predictions")
     debug_models = debug.add_subparsers(dest="model", required=True)
