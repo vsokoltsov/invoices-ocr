@@ -54,6 +54,7 @@ jobs:
 
   test:
     name: pytest
+    needs: [lint, typecheck]
     runs-on: ubuntu-latest
 
     steps:
