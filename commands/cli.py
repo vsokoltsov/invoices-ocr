@@ -176,6 +176,16 @@ def download_docile(args: argparse.Namespace, settings: Settings) -> None:
     print(path)
 
 
+def cache_docile_images(args: argparse.Namespace, settings: Settings) -> None:
+    from app.datasets.docile.images import DocileImageCache
+
+    path = DocileImageCache(
+        dataset_path=Path(args.dataset_path),
+        images_path=Path(args.images_path),
+    ).run()
+    print(path)
+
+
 def build_parser(settings: Settings) -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="python -m commands.cli")
     commands = parser.add_subparsers(dest="command", required=True)
@@ -272,6 +282,27 @@ def build_parser(settings: Settings) -> argparse.ArgumentParser:
         help="Download token; defaults to the DOCILE_TOKEN environment setting.",
     )
     docile.set_defaults(handler=download_docile)
+
+    cache_images = dataset_commands.add_parser(
+        "cache-images", help="Cache PDF page images for a downloaded dataset"
+    )
+    cache_datasets = cache_images.add_subparsers(dest="dataset", required=True)
+    docile_images = cache_datasets.add_parser(
+        "docile",
+        help="Cache DocILE page images at the LayoutLM training resolution",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    docile_images.add_argument(
+        "--dataset-path",
+        default=settings.DOCILE.OUTPUT_PATH,
+        help="Prepared DocILE .parquet or .csv file containing document_id and pdf_path.",
+    )
+    docile_images.add_argument(
+        "--images-path",
+        default=settings.LAYOUTLM.IMAGES_PATH,
+        help="LayoutLM image cache directory; defaults to LAYOUTLM_IMAGES_PATH.",
+    )
+    docile_images.set_defaults(handler=cache_docile_images)
     return parser
 
 
