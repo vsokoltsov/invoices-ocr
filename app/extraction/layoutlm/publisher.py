@@ -4,6 +4,7 @@ from pathlib import Path
 
 from clearml import OutputModel, Task
 
+
 @dataclass
 class ClearMLPublisher:
     project_name: str = "ocr"
@@ -13,9 +14,7 @@ class ClearMLPublisher:
         checkpoint_path = checkpoint_path.resolve()
         output_dir = output_dir.resolve()
 
-        config = json.loads(
-            (output_dir / "config.json").read_text(encoding="utf-8")
-        )
+        config = json.loads((output_dir / "config.json").read_text(encoding="utf-8"))
         metrics = json.loads(
             (output_dir / "test_metrics.json").read_text(encoding="utf-8")
         )
@@ -28,43 +27,47 @@ class ClearMLPublisher:
             auto_connect_frameworks=False,
             auto_connect_arg_parser=False,
         )
-        task.connect(config, name="Training")
+        try:
+            task.connect(config, name="Training")
 
-        model = OutputModel(
-            task=task,
-            name="layoutlmv3-best",
-            framework="PyTorch",
-            config_dict=config,
-        )
-        model.update_weights(
-            weights_filename=str(checkpoint_path),
-            auto_delete_file=False,
-            async_enable=False,
-        )
-
-        for name in (
-            "test_metrics.json",
-            "history.csv",
-            "config.json",
-            "split_manifest.csv",
-            "processor",
-        ):
-            uploaded = task.upload_artifact(
-                name=name,
-                artifact_object=output_dir / name,
-                wait_on_upload=True,
+            model = OutputModel(
+                task=task,
+                name="layoutlmv3-best",
+                framework="PyTorch",
+                config_dict=config,
             )
-            if not uploaded:
-                raise RuntimeError(f"ClearML upload failed: {name}")
-
-        for name in ("entity_precision", "entity_recall", "entity_f1"):
-            task.get_logger().report_scalar(
-                title="Test",
-                series=name,
-                value=float(metrics[name]),
-                iteration=0,
+            model.update_weights(
+                weights_filename=str(checkpoint_path),
+                auto_delete_file=False,
+                async_enable=False,
             )
 
-        model_id = model.id
-        task.close()
-        return model_id
+            for name in (
+                "test_metrics.json",
+                "history.csv",
+                "config.json",
+                "split_manifest.csv",
+                "processor",
+            ):
+                uploaded = task.upload_artifact(
+                    name=name,
+                    artifact_object=output_dir / name,
+                    wait_on_upload=True,
+                )
+                if not uploaded:
+                    raise RuntimeError(f"ClearML upload failed: {name}")
+
+            for name in ("entity_precision", "entity_recall", "entity_f1"):
+                task.get_logger().report_scalar(
+                    title="Test",
+                    series=name,
+                    value=float(metrics[name]),
+                    iteration=0,
+                )
+
+            return model.id
+        except Exception as error:
+            task.mark_failed(status_reason=str(error))
+            raise
+        finally:
+            task.close()
