@@ -7,4 +7,3 @@ FIELD_TO_ENTITY = {
     "invoice.seller_name": "SELLER_NAME",
     "invoice.client_name": "CLIENT_NAME",
 }
-
