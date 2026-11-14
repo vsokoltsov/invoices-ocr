@@ -121,7 +121,7 @@ def train_bert_pytorch(args: argparse.Namespace, settings: Settings) -> None:
 
 
 def train_layoutlm(args: argparse.Namespace, settings: Settings) -> None:
-    from app.pipelines.layoutlm import training
+    from app.pipelines.layoutlm.pipeline import LayoutLMTrainingPipeline
 
     config = LayoutLMConfig(
         _env_file=None,
@@ -130,13 +130,7 @@ def train_layoutlm(args: argparse.Namespace, settings: Settings) -> None:
     params = LayoutLMTrainingParams(
         **{name.lower(): getattr(config, name) for name in LayoutLMConfig.model_fields}
     )
-    pipeline_class = getattr(training, "LayoutLMTrainingPipeline", None)
-    if pipeline_class is None:
-        raise NotImplementedError(
-            "Implement LayoutLMTrainingPipeline.run(params) in "
-            "app/pipelines/layoutlm/training.py to run LayoutLM training."
-        )
-    pipeline_class().run(params)
+    LayoutLMTrainingPipeline(params=params).run()
 
 
 def debug_bert_pytorch(args: argparse.Namespace, settings: Settings) -> None:

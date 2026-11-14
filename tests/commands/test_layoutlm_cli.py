@@ -5,7 +5,7 @@ from pydantic import ValidationError
 
 from app.aggregates.layoutlm.params import LayoutLMDevice, LayoutLMTrainingParams
 from app.config import LayoutLMConfig, Settings
-from app.pipelines.layoutlm import training
+from app.pipelines.layoutlm import pipeline as layoutlm_pipeline
 from commands import cli
 
 
@@ -21,9 +21,8 @@ def settings():
 
 def test_layoutlm_command_passes_every_option_to_pipeline(settings, monkeypatch):
     pipeline = Mock()
-    monkeypatch.setattr(
-        training, "LayoutLMTrainingPipeline", lambda: pipeline, raising=False
-    )
+    factory = Mock(return_value=pipeline)
+    monkeypatch.setattr(layoutlm_pipeline, "LayoutLMTrainingPipeline", factory)
     monkeypatch.setattr(cli, "get_settings", lambda: settings)
     cli.main(
         [
@@ -61,8 +60,8 @@ def test_layoutlm_command_passes_every_option_to_pipeline(settings, monkeypatch)
             "cpu",
         ]
     )
-    pipeline.run.assert_called_once_with(
-        LayoutLMTrainingParams(
+    factory.assert_called_once_with(
+        params=LayoutLMTrainingParams(
             dataset_path="prepared.parquet",
             model_name="local-layoutlm",
             output_dir="reports",
@@ -80,6 +79,7 @@ def test_layoutlm_command_passes_every_option_to_pipeline(settings, monkeypatch)
             device=LayoutLMDevice.CPU,
         )
     )
+    pipeline.run.assert_called_once_with()
 
 
 def test_config_uses_dotenv_then_environment_then_cli(tmp_path, monkeypatch):
@@ -101,8 +101,9 @@ def test_config_uses_dotenv_then_environment_then_cli(tmp_path, monkeypatch):
     assert parser.parse_args(["train", "layoutlm", "--batch-size", "2"]).BATCH_SIZE == 2
 
 
-def test_layoutlm_help_works_without_pipeline(settings, monkeypatch, capsys):
-    monkeypatch.setattr(training, "LayoutLMTrainingPipeline", None, raising=False)
+def test_layoutlm_help_does_not_run_pipeline(settings, monkeypatch, capsys):
+    factory = Mock()
+    monkeypatch.setattr(layoutlm_pipeline, "LayoutLMTrainingPipeline", factory)
     with pytest.raises(SystemExit) as result:
         cli.build_parser(settings).parse_args(["train", "layoutlm", "--help"])
     assert result.value.code == 0
@@ -110,15 +111,7 @@ def test_layoutlm_help_works_without_pipeline(settings, monkeypatch, capsys):
     assert "--warmup-ratio" in output
     assert "--checkpoint-path" in output
     assert "--device" in output
-
-
-def test_missing_pipeline_has_an_explicit_implementation_message(settings, monkeypatch):
-    monkeypatch.setattr(training, "LayoutLMTrainingPipeline", None, raising=False)
-    args = cli.build_parser(settings).parse_args(["train", "layoutlm"])
-    with pytest.raises(
-        NotImplementedError, match=r"LayoutLMTrainingPipeline.run\(params\)"
-    ):
-        args.handler(args, settings)
+    factory.assert_not_called()
 
 
 @pytest.mark.parametrize(
@@ -139,7 +132,7 @@ def test_invalid_training_values_fail_before_pipeline(
     settings, monkeypatch, option, value
 ):
     factory = Mock()
-    monkeypatch.setattr(training, "LayoutLMTrainingPipeline", factory, raising=False)
+    monkeypatch.setattr(layoutlm_pipeline, "LayoutLMTrainingPipeline", factory)
     args = cli.build_parser(settings).parse_args(["train", "layoutlm", option, value])
     with pytest.raises(ValidationError):
         args.handler(args, settings)
