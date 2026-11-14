@@ -14,16 +14,15 @@ from transformers.tokenization_utils_tokenizers import TokenizersBackend
 from app.aggregates.layoutlm.params import LayoutLMDevice, LayoutLMTrainingParams
 from app.extraction.layoutlm.builder import InvoiceBuilder
 from app.extraction.layoutlm.converter import AttachmentToImageConverter
-from app.extraction.layoutlm.metrics import EpochMetrics
 from app.extraction.layoutlm.model import LayoutLMFieldExtractor
+from app.extraction.layoutlm.publisher import ClearMLPublisher
 from app.extraction.layoutlm.schema import InvoiceLabelSchema
 from app.pipelines.layoutlm.builder import BuildInvoices
 from app.pipelines.layoutlm.dataloader import InvoiceDataLoaders
-from app.pipelines.layoutlm.split import DatasetsSplit
-from app.pipelines.layoutlm.training import LayoutLMTraining
 from app.pipelines.layoutlm.evaluate import EvaluateTraining
 from app.pipelines.layoutlm.publish import PublishModel
-from app.extraction.layoutlm.publisher import ClearMLPublisher
+from app.pipelines.layoutlm.split import DatasetsSplit
+from app.pipelines.layoutlm.training import LayoutLMTraining
 
 
 @dataclass
@@ -46,7 +45,7 @@ class LayoutLMTrainingPipeline:
             raise ValueError("MPS was requested but is not available")
         return torch.device(str(self.params.device))
 
-    def run(self) -> pd.DataFrame:
+    def run(self) -> str:
         """Train from prepared DocILE data and save run, split, and evaluation artifacts."""
         random.seed(self.params.random_seed)
         np.random.seed(self.params.random_seed)
@@ -69,7 +68,6 @@ class LayoutLMTrainingPipeline:
         output_dir = Path(self.params.output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
         schema = InvoiceLabelSchema()
-        fields = list(schema.field_to_entity.keys())
         tokenizer = AutoTokenizer.from_pretrained(
             self.params.model_name,
             use_fast=True,
@@ -105,32 +103,34 @@ class LayoutLMTrainingPipeline:
             label2id=schema.label2id,
             min_coverage=self.params.min_word_coverage,
         )
-        metrics = EpochMetrics(
-            labels=schema.labels,
-            fields=fields,
-        )
-        publisher = ClearMLPublisher()
         build_step = BuildInvoices(builder=invoice_builder, output_dir=output_dir)
         dataloaders_step = InvoiceDataLoaders(
             tokenizer=cast(TokenizersBackend, tokenizer),
             image_processor=image_processor,
             converter=converter,
             device=device,
-            params=self.params,
+            batch_size=self.params.batch_size,
+            max_length_tokens=self.params.max_length_tokens,
+            num_workers=self.params.dataloader_num_workers,
         )
         training_step = LayoutLMTraining(
             model=model,
-            metrics=metrics,
             schema=schema,
             device=device,
-            params=self.params,
+            epochs=self.params.num_epoch,
+            learning_rate=self.params.learning_rate,
+            weight_decay=self.params.weight_decay,
+            warmup_ratio=self.params.warmup_ratio,
+            output_dir=output_dir,
+            checkpoint_path=Path(self.params.checkpoint_path),
         )
         eval_training_step = EvaluateTraining(
-            output_dir=Path(self.params.output_dir)
+            output_dir=output_dir,
+            device=device,
         )
         publisher_step = PublishModel(
-            publisher=publisher,
-            checkpoint_path=self.params.checkpoint_path
+            publisher=ClearMLPublisher(),
+            output_dir=output_dir,
         )
         pipeline = Pipeline(
             [
@@ -138,7 +138,7 @@ class LayoutLMTrainingPipeline:
                 PipeFunc(build_step.build, output_name="build_result"),
                 PipeFunc(dataloaders_step.build, output_name="dataloaders"),
                 PipeFunc(training_step.train, output_name="train_result"),
-                PipeFunc(eval_training_step.eval, output_name="output_dir"),
+                PipeFunc(eval_training_step.eval, output_name="evaluation_result"),
                 PipeFunc(publisher_step.publish, output_name="model_id"),
             ]
         )

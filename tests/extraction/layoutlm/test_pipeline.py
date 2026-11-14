@@ -9,6 +9,7 @@ import torch
 from app.aggregates.layoutlm.params import LayoutLMDevice, LayoutLMTrainingParams
 from app.config import LayoutLMConfig, Settings
 from app.extraction.layoutlm.model import LayoutLMFieldExtractor
+from app.extraction.layoutlm.publisher import ClearMLPublisher
 from app.pipelines.layoutlm import pipeline as pipeline_module
 from app.pipelines.layoutlm.pipeline import LayoutLMTrainingPipeline
 from app.pipelines.layoutlm.split import DatasetsSplit
@@ -84,8 +85,18 @@ def test_cli_runs_actual_pipefunc_graph_and_writes_reloadable_artifacts(
             },
         ),
     )
+
+    def publish(*, checkpoint_path, output_dir):
+        assert checkpoint_path.is_file()
+        assert (output_dir / "test_metrics.json").is_file()
+        assert (output_dir / "history.csv").is_file()
+        return "clearml-model-id"
+
+    upload = Mock(side_effect=publish)
+    monkeypatch.setattr(ClearMLPublisher, "run", upload)
     monkeypatch.setattr(cli, "get_settings", lambda: settings)
     cli.main(["train", "layoutlm"])
+    upload.assert_called_once()
 
     output = tmp_path / "results"
     history = pd.read_csv(output / "history.csv")
