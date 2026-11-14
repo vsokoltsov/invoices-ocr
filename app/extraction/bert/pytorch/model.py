@@ -16,7 +16,6 @@ class BertFieldExtractor(nn.Module):
             out_features=num_labels,
         )
 
-    # ty: ignore[invalid-mutable-override]
     def forward(self, input_ids: Tensor, attention_mask: Tensor) -> Tensor:
         hid = self.bert(
             input_ids=input_ids,

@@ -22,7 +22,7 @@ class TinyTagger(nn.Module):
         with torch.no_grad():
             self.embedding.weight.copy_(torch.eye(3) * 5)
 
-    def forward(self, input_ids, attention_mask):  # ty: ignore[invalid-mutable-override]
+    def forward(self, input_ids, attention_mask):
         return self.embedding(input_ids)
 
 

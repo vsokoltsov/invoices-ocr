@@ -64,5 +64,6 @@ exclude = ["notebooks"]
 invalid-mutable-override = "ignore"
 
 [tool.pytest.ini_options]
+addopts = ["--import-mode=importlib"]
 pythonpath = ["."]
 testpaths = ["tests"]

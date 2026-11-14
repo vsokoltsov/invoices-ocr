@@ -16,7 +16,7 @@ class AddressTagger(nn.Module):
         logits[schema.label2id["I-SELLER_ADDRESS"]] = 1
         self.register_buffer("scores", logits)
 
-    def forward(self, input_ids, attention_mask):  # ty: ignore[invalid-mutable-override]
+    def forward(self, input_ids, attention_mask):
         return self.scores.expand(*input_ids.shape, -1)
 
 
