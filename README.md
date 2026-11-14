@@ -349,6 +349,9 @@ The command runs `LayoutLMTrainingPipeline(params).run()` from
 `app/pipelines/layoutlm/pipeline.py`. It splits documents randomly into 80/10/10
 partitions, prepares page labels, builds image/text windows, trains, restores the
 best validation-entity-F1 checkpoint, and evaluates the held-out test split.
+Evaluation reloads the checkpoint from disk. After evaluation succeeds, the
+publication step uploads the model and run artifacts to ClearML and the pipeline
+returns the ClearML model ID. Configure ClearML credentials before running it.
 It saves `history.csv`, `test_metrics.json`, `config.json`, `split_manifest.csv`,
 per-split rejection CSVs, and tokenizer/image-processor settings under
 `--output-dir`. The checkpoint and image cache use their own configured paths.
