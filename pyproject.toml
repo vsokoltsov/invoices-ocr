@@ -5,6 +5,7 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "clearml>=2.2.0",
     "datasets>=5.1.0",
     "httpx>=0.28.1",
     "ipykernel>=7.1.0",
