@@ -6,7 +6,6 @@ import numpy as np
 import pandas as pd
 from tqdm.auto import tqdm
 
-from app.extraction.layoutlm.enums import FIELD_TO_ENTITY
 from app.extraction.layoutlm.schema import InvoiceLabelSchema
 
 

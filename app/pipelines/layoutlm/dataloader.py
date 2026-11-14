@@ -6,7 +6,6 @@ from torch.utils.data import DataLoader
 from transformers.image_processing_utils import BaseImageProcessor
 from transformers.tokenization_utils_tokenizers import TokenizersBackend
 
-from app.aggregates.layoutlm.params import LayoutLMTrainingParams
 from app.extraction.layoutlm.converter import AttachmentToImageConverter
 from app.extraction.layoutlm.dataset import InvoiceDataset
 from app.pipelines.layoutlm.builder import BuildResult
@@ -18,7 +17,9 @@ class InvoiceDataLoaders:
     image_processor: BaseImageProcessor
     converter: AttachmentToImageConverter
     device: torch.device
-    params: LayoutLMTrainingParams
+    batch_size: int
+    max_length_tokens: int = 512
+    num_workers: int = 0
 
     def _create_datasets(self, pages: list[pd.DataFrame]) -> list[InvoiceDataset]:
         datasets = []
@@ -28,7 +29,7 @@ class InvoiceDataLoaders:
                 tokenizer=self.tokenizer,
                 image_processor=self.image_processor,
                 converter=self.converter,
-                max_length=self.params.max_length_tokens,
+                max_length=self.max_length_tokens,
             )
             datasets.append(ds)
         return datasets
@@ -38,18 +39,18 @@ class InvoiceDataLoaders:
         train_dataset, *other_datasets = datasets
         train_loader = DataLoader(
             train_dataset,
-            batch_size=self.params.batch_size,
+            batch_size=self.batch_size,
             shuffle=True,
-            num_workers=self.params.dataloader_num_workers,
+            num_workers=self.num_workers,
             pin_memory=self.device.type == "cuda",
         )
         for ld in other_datasets:
             loaders.append(
                 DataLoader(
                     ld,
-                    batch_size=self.params.batch_size,
+                    batch_size=self.batch_size,
                     shuffle=False,
-                    num_workers=self.params.dataloader_num_workers,
+                    num_workers=self.num_workers,
                     pin_memory=self.device.type == "cuda",
                 )
             )
