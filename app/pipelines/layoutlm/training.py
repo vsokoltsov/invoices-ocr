@@ -1,33 +1,35 @@
-from typing import NamedTuple
 from dataclasses import dataclass
 from pathlib import Path
 
-import pandas as pd
 import torch
 from torch import nn
 from torch.utils.data import DataLoader
 from transformers import get_linear_schedule_with_warmup
 
-from app.aggregates.layoutlm.params import LayoutLMTrainingParams
 from app.extraction.layoutlm.enums import IGNORE_INDEX
 from app.extraction.layoutlm.metrics import EpochMetrics
 from app.extraction.layoutlm.model import LayoutLMFieldExtractor
 from app.extraction.layoutlm.schema import InvoiceLabelSchema
 from app.extraction.layoutlm.training import OCRInvoiceTraining
 
-class TrainingResult(NamedTuple):
-    history_df: pd.DataFrame
-    loader: DataLoader
-    trainer: OCRInvoiceTraining
+
+@dataclass(frozen=True)
+class TrainingResult:
+    checkpoint_path: Path
+    history_path: Path
 
 
 @dataclass
 class LayoutLMTraining:
     model: LayoutLMFieldExtractor
-    metrics: EpochMetrics
     schema: InvoiceLabelSchema
-    params: LayoutLMTrainingParams
     device: torch.device
+    epochs: int
+    learning_rate: float
+    weight_decay: float
+    warmup_ratio: float
+    output_dir: Path
+    checkpoint_path: Path
 
     def train(self, dataloaders: dict[str, DataLoader]) -> TrainingResult:
         decay, no_decay = [], []
@@ -36,24 +38,23 @@ class LayoutLMTraining:
                 (no_decay if parameter.ndim < 2 else decay).append(parameter)
         optimizer = torch.optim.AdamW(
             [
-                {"params": decay, "weight_decay": self.params.weight_decay},
+                {"params": decay, "weight_decay": self.weight_decay},
                 {"params": no_decay, "weight_decay": 0.0},
             ],
-            lr=self.params.learning_rate,
+            lr=self.learning_rate,
         )
-        total_steps = self.params.num_epoch * len(dataloaders["train"])
-        warmup_steps = int(self.params.warmup_ratio * total_steps)
+        total_steps = self.epochs * len(dataloaders["train"])
+        warmup_steps = int(self.warmup_ratio * total_steps)
         scheduler = get_linear_schedule_with_warmup(
             optimizer,
             num_warmup_steps=warmup_steps,
             num_training_steps=total_steps,
         )
         criterion = nn.CrossEntropyLoss(ignore_index=IGNORE_INDEX)
-        output_dir = Path(self.params.output_dir)
 
         trainer = OCRInvoiceTraining(
             model=self.model,
-            metrics=self.metrics,
+            metrics=EpochMetrics(self.schema.labels, list(self.schema.field_to_entity)),
             optimizer=optimizer,
             criterion=criterion,
             train_loader=dataloaders["train"],
@@ -61,13 +62,14 @@ class LayoutLMTraining:
             device=self.device,
             scheduler=scheduler,
             schema=self.schema,
-            epochs=self.params.num_epoch,
-            output_dir=output_dir,
-            checkpoint_path=Path(self.params.checkpoint_path),
+            epochs=self.epochs,
+            output_dir=self.output_dir,
+            checkpoint_path=self.checkpoint_path,
         )
-        history = trainer.train()
+        trainer.train()
+        # Release device memory before a separate model is loaded for testing.
+        self.model.to("cpu")
         return TrainingResult(
-            history_df=history,
-            loader=dataloaders["test"],
-            trainer=trainer
+            checkpoint_path=self.checkpoint_path,
+            history_path=self.output_dir / "history.csv",
         )
