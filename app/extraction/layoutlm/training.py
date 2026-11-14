@@ -97,15 +97,16 @@ class OCRInvoiceTraining:
         return self.metrics.compute()
 
     @torch.inference_mode()
-    def eval_one_epoch(self, epoch: int) -> ValidationMetricsResult:
+    def eval_one_epoch(
+        self, epoch: int, external_loader: DataLoader | None = None
+    ) -> ValidationMetricsResult:
         self.model.eval()
         self.metrics.reset()
 
         word_predictions = {}
 
-        progress_bar = tqdm(
-            self.val_loader, position=1, desc=f"Eval epoch {epoch}", leave=False
-        )
+        loader = external_loader if external_loader is not None else self.val_loader
+        progress_bar = tqdm(loader, position=1, desc=f"Eval epoch {epoch}", leave=False)
         for batch in progress_bar:
             inputs = move_inputs(batch, self.device)
             labels = batch["labels"].to(self.device, non_blocking=True)
@@ -140,7 +141,7 @@ class OCRInvoiceTraining:
         true_sequences = []
         pred_sequences = []
 
-        dataset = cast(InvoiceDataset, self.val_loader.dataset)
+        dataset = cast(InvoiceDataset, loader.dataset)
         for page_index, page in enumerate(dataset.pages):
             true_sequences.append(
                 [self.schema.id2label[label] for label in page["labels"]]
@@ -161,6 +162,13 @@ class OCRInvoiceTraining:
             output_dict=True,
             zero_division=0,
         )
+        report = {
+            entity: {
+                key: int(value) if key == "support" else float(value)
+                for key, value in values.items()
+            }
+            for entity, values in report.items()
+        }
         return ValidationMetricsResult(
             word_metrics=self.metrics.compute(),
             entity_precision=float(report["micro avg"]["precision"]),
