@@ -2,13 +2,13 @@
 
 ## Context
 
+![An invoice image or PDF page passes through OCR to extract text and bounding boxes, then through field extraction to produce invoice JSON.](docs/assets/invoice-processing.png)
+
 OCR explores how to turn invoice images and PDF pages into structured data.
 An OCR engine, such as PaddleOCR, extracts text and its bounding boxes. A field
 extraction model identifies values such as invoice numbers, dates, seller and
 customer details, and amounts. These values can then be assembled into an
 invoice JSON document.
-
-![An invoice image or PDF page passes through OCR to extract text and bounding boxes, then through field extraction to produce invoice JSON.](docs/assets/invoice-processing.png)
 
 The repository focuses on dataset preparation, training, and evaluation for
 invoice field extraction with BERT and LayoutLMv3. It includes Kaggle and DocILE
