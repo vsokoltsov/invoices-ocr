@@ -1,5 +1,5 @@
-import json
-from dataclasses import asdict, dataclass
+from typing import NamedTuple
+from dataclasses import dataclass
 from pathlib import Path
 
 import pandas as pd
@@ -15,6 +15,11 @@ from app.extraction.layoutlm.model import LayoutLMFieldExtractor
 from app.extraction.layoutlm.schema import InvoiceLabelSchema
 from app.extraction.layoutlm.training import OCRInvoiceTraining
 
+class TrainingResult(NamedTuple):
+    history_df: pd.DataFrame
+    loader: DataLoader
+    trainer: OCRInvoiceTraining
+
 
 @dataclass
 class LayoutLMTraining:
@@ -24,7 +29,7 @@ class LayoutLMTraining:
     params: LayoutLMTrainingParams
     device: torch.device
 
-    def train(self, dataloaders: dict[str, DataLoader]) -> pd.DataFrame:
+    def train(self, dataloaders: dict[str, DataLoader]) -> TrainingResult:
         decay, no_decay = [], []
         for parameter in self.model.parameters():
             if parameter.requires_grad:
@@ -61,11 +66,8 @@ class LayoutLMTraining:
             checkpoint_path=Path(self.params.checkpoint_path),
         )
         history = trainer.train()
-        test_metrics = trainer.eval_one_epoch(
-            epoch=self.params.num_epoch, external_loader=dataloaders["test"]
+        return TrainingResult(
+            history_df=history,
+            loader=dataloaders["test"],
+            trainer=trainer
         )
-        (output_dir / "test_metrics.json").write_text(
-            json.dumps(asdict(test_metrics), indent=2, allow_nan=False),
-            encoding="utf-8",
-        )
-        return history
