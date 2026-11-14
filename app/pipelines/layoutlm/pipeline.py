@@ -21,6 +21,9 @@ from app.pipelines.layoutlm.builder import BuildInvoices
 from app.pipelines.layoutlm.dataloader import InvoiceDataLoaders
 from app.pipelines.layoutlm.split import DatasetsSplit
 from app.pipelines.layoutlm.training import LayoutLMTraining
+from app.pipelines.layoutlm.evaluate import EvaluateTraining
+from app.pipelines.layoutlm.publish import PublishModel
+from app.extraction.layoutlm.publisher import ClearMLPublisher
 
 
 @dataclass
@@ -106,6 +109,7 @@ class LayoutLMTrainingPipeline:
             labels=schema.labels,
             fields=fields,
         )
+        publisher = ClearMLPublisher()
         build_step = BuildInvoices(builder=invoice_builder, output_dir=output_dir)
         dataloaders_step = InvoiceDataLoaders(
             tokenizer=cast(TokenizersBackend, tokenizer),
@@ -121,14 +125,23 @@ class LayoutLMTrainingPipeline:
             device=device,
             params=self.params,
         )
+        eval_training_step = EvaluateTraining(
+            output_dir=Path(self.params.output_dir)
+        )
+        publisher_step = PublishModel(
+            publisher=publisher,
+            checkpoint_path=self.params.checkpoint_path
+        )
         pipeline = Pipeline(
             [
                 PipeFunc(DatasetsSplit.create, output_name="split"),
                 PipeFunc(build_step.build, output_name="build_result"),
                 PipeFunc(dataloaders_step.build, output_name="dataloaders"),
-                PipeFunc(training_step.train, output_name="history_df"),
+                PipeFunc(training_step.train, output_name="train_result"),
+                PipeFunc(eval_training_step.eval, output_name="output_dir"),
+                PipeFunc(publisher_step.publish, output_name="model_id"),
             ]
         )
         return pipeline.run(
-            "history_df", kwargs={"df": df, "random_seed": self.params.random_seed}
+            "model_id", kwargs={"df": df, "random_seed": self.params.random_seed}
         )
