@@ -53,8 +53,6 @@ def test_download_cli_dispatches_preparation_and_prints_absolute_path(
     monkeypatch.setattr(cli, "KaggleInvoicesPreparation", factory)
     settings = Settings(
         _env_file=None,
-        DATA_PATH="input",
-        DEBUG_ARTIFACTS_PATH="debug",
         DOCILE_TOKEN="unused",
     )
     monkeypatch.setattr(cli, "get_settings", lambda: settings)

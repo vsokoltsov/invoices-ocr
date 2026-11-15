@@ -55,8 +55,6 @@ def test_cli_uses_dataset_and_layoutlm_cache_defaults(
     )
     settings = Settings(
         _env_file=None,
-        DATA_PATH="unused",
-        DEBUG_ARTIFACTS_PATH="unused",
         DOCILE=DocileInvoicesConfig(_env_file=None, OUTPUT_PATH=str(dataset)),
         LAYOUTLM=LayoutLMConfig(
             _env_file=None, IMAGES_PATH=str(tmp_path / "default-cache")
@@ -116,9 +114,7 @@ def test_missing_pdf_error_identifies_document_and_preserves_cause(tmp_path):
 
 
 def test_cache_images_help_exposes_all_options(capsys):
-    settings = Settings(
-        _env_file=None, DATA_PATH="unused", DEBUG_ARTIFACTS_PATH="unused"
-    )
+    settings = Settings(_env_file=None)
     with pytest.raises(SystemExit) as caught:
         cli.build_parser(settings).parse_args(
             ["datasets", "cache-images", "docile", "--help"]
