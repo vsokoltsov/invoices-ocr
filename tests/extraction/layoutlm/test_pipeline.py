@@ -75,8 +75,6 @@ def test_cli_runs_actual_pipefunc_graph_and_writes_reloadable_artifacts(
     monkeypatch.setattr(pipeline_module, "LayoutLMFieldExtractor", create_model)
     settings = Settings(
         _env_file=None,
-        DATA_PATH="unused",
-        DEBUG_ARTIFACTS_PATH="unused",
         LAYOUTLM=LayoutLMConfig(
             _env_file=None,
             **{
