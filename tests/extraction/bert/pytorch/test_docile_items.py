@@ -4,10 +4,8 @@ from copy import deepcopy
 import pandas as pd
 import pytest
 
-from app.aggregates.bert.params import DatasetName
 from app.extraction.bert.pytorch.datasets import InvoiceDataset
 from app.extraction.bert.pytorch.docile.item_builder import DocileItemRecordBuilder
-from app.extraction.bert.pytorch.pipeline import BertPytorchPipeline
 
 
 def item_frame():
@@ -64,9 +62,9 @@ def item_frame():
 
 
 def test_item_only_records_keep_membership_and_use_shared_token_dataset(fast_tokenizer):
-    records, rejected, schema = BertPytorchPipeline.prepare_records(
-        item_frame(), DatasetName.DOCILE, line_items_only=True
-    )
+    builder = DocileItemRecordBuilder()
+    records, rejected = builder.build(item_frame())
+    schema = builder.label_schema
     assert not rejected
     assert schema.num_labels == 9
     entities = records[0]["entities"]
@@ -134,10 +132,3 @@ def test_item_description_fragments_keep_id_across_pages():
         ("Acme", 0, 7),
         ("Corporation", 1, 7),
     ]
-
-
-def test_item_only_mode_does_not_accept_kaggle():
-    with pytest.raises(ValueError, match="requires --dataset-name docile"):
-        BertPytorchPipeline.prepare_records(
-            pd.DataFrame(), DatasetName.KAGGLE_INVOICES, line_items_only=True
-        )

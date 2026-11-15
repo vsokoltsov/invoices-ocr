@@ -5,15 +5,13 @@ from pathlib import Path
 import pandas as pd
 import torch
 
-from app.aggregates.bert.params import (
-    BertPytorchDebugParams,
-    BertPytorchParams,
-    DatasetName,
-)
+from app.aggregates.bert.params import BertPytorchDebugParams
 from app.extraction.bert.pytorch.checkpoint import BertPytorchCheckpoint
 from app.extraction.bert.pytorch.decoding import OCRWordDecoder
+from app.extraction.bert.pytorch.docile.builder import DocileRecordBuilder
+from app.extraction.bert.pytorch.docile.item_builder import DocileItemRecordBuilder
 from app.extraction.bert.pytorch.inspector import EntityErrorInspector
-from app.extraction.bert.pytorch.pipeline import BertPytorchPipeline
+from app.pipelines.bert.split import DatasetsSplit
 
 
 @dataclass
@@ -40,27 +38,16 @@ class BertPytorchDebugPipeline:
             raise ValueError(
                 "No saved test split; pass --dataset-path and the original --random-seed"
             )
-        training_params = BertPytorchParams(
-            dataset_path=params.dataset_path,
-            result_filename="unused",
-            model_name="unused",
-            max_length_tokens=validation["max_length"],
-            random_seed=params.random_seed,
-            batch_size=1,
-            num_epoch=1,
-            learning_rate=0,
-            weight_decay=0,
-            dataset_type=DatasetName.DOCILE,
-            line_items_only=all(
-                path.startswith("items.") for path in schema.field_to_entity
-            ),
+        frame = pd.read_parquet(params.dataset_path)
+        frame["json_data"] = frame["json_data"].map(
+            lambda value: json.loads(value) if isinstance(value, str) else value
         )
-        frame = BertPytorchPipeline.load_frame(training_params)
-        records, _, rebuilt_schema = BertPytorchPipeline.prepare_records(
-            frame, DatasetName.DOCILE, line_items_only=training_params.line_items_only
+        builder = (
+            DocileItemRecordBuilder(schema)
+            if all(path.startswith("items.") for path in schema.field_to_entity)
+            else DocileRecordBuilder(schema)
         )
-        if rebuilt_schema.field_to_entity != schema.field_to_entity:
-            raise ValueError("Rebuilt label schema does not match the checkpoint")
+        records, _ = builder.build(frame)
         manifest = checkpoint_dir / "split_manifest.json"
         if manifest.is_file():
             membership = json.loads(manifest.read_text(encoding="utf-8"))
@@ -76,9 +63,9 @@ class BertPytorchDebugPipeline:
                 if split == "test" and document_id in by_id
             ]
         else:
-            _, rebuilt_validation, test = BertPytorchPipeline.split_records(
-                records, frame, training_params
-            )
+            partitions = DatasetsSplit.create(frame, params.random_seed)
+            rebuilt_validation, _ = builder.build(partitions.val)
+            test, _ = builder.build(partitions.test)
         # Compare supervised inputs, not only IDs, before trusting reconstructed membership.
         keys = ("document_id", "text", "entities", "ignored_regions")
 

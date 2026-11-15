@@ -3,13 +3,11 @@ import re
 import pandas as pd
 import pytest
 
-from app.aggregates.bert.params import DatasetName
 from app.extraction.bert.pytorch.datasets import InvoiceDataset
 from app.extraction.bert.pytorch.docile.builder import (
     DocileRecordBuilder,
     prepare_docile_records,
 )
-from app.extraction.bert.pytorch.pipeline import BertPytorchPipeline
 from app.extraction.bert.pytorch.schema import InvoiceLabelSchema
 
 
@@ -181,11 +179,12 @@ def test_pipeline_labels_amount_due_separately_and_keeps_total_priority(
             "other_fields.amount_paid": (0, 0),
         },
     )
-    records, rejected, schema = BertPytorchPipeline.prepare_records(
-        frame, DatasetName.DOCILE
+    schema = InvoiceLabelSchema(
+        {"subtotal.total": "TOTAL", "other_fields.amount_due": "AMOUNT_DUE"}
     )
+    records, rejected = DocileRecordBuilder(schema).build(frame)
     assert not rejected
-    assert schema.num_labels == 25
+    assert schema.num_labels == 5
     assert schema.entity_to_field["AMOUNT_DUE"] == "other_fields.amount_due"
     assert [(e["label"], e["text"]) for e in records[0]["entities"]] == expected
     assert records[0]["amount_due_suppressed_words"] == suppressed
@@ -213,12 +212,16 @@ def test_amount_due_priority_does_not_hide_missing_or_unresolved_annotations():
         },
     )
     for frame, status in [(missing, "missing_span"), (conflicts, "overlap")]:
-        records, rejected, _ = BertPytorchPipeline.prepare_records(
-            frame, DatasetName.DOCILE
+        schema = InvoiceLabelSchema(
+            {
+                **InvoiceLabelSchema().field_to_entity,
+                "other_fields.amount_due": "AMOUNT_DUE",
+            }
         )
+        records, rejected = DocileRecordBuilder(schema).build(frame)
         assert not records
         assert status in {issue["status"] for issue in rejected[0]["issues"]}
 
 
-def test_default_schema_keeps_amount_due_out_of_kaggle_labels():
+def test_default_schema_uses_shared_base_fields():
     assert "other_fields.amount_due" not in InvoiceLabelSchema().field_to_entity
