@@ -145,6 +145,10 @@ class OCRInvoiceTraining:
                     key: value.detach().cpu().clone()
                     for key, value in self.model.state_dict().items()
                 }
+                logger.info("New best f1", best_f1=best_f1)
+                progress_bar.set_description(
+                    f"Train model {epoch}/{self.epochs}. Best f1 {best_f1}"
+                )
 
                 backbone_config = getattr(
                     getattr(self.model, "backbone", None), "config", None
