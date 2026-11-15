@@ -1,8 +1,8 @@
 import json
 from dataclasses import dataclass
 
-from app.extraction.bert.pytorch.metrics import EvalResult
-from app.extraction.bert.pytorch.publisher import ClearMLPublisher
+from app.extraction.bert.metrics import EvalResult
+from app.extraction.bert.publisher import ClearMLPublisher
 from app.pipelines.bert.evaluate import EvaluationResult
 
 

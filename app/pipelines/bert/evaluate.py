@@ -6,10 +6,10 @@ import torch
 from torch import nn
 from torch.utils.data import DataLoader
 
-from app.extraction.bert.pytorch.checkpoint import BertPytorchCheckpoint
-from app.extraction.bert.pytorch.decoding import OCRWordDecoder
-from app.extraction.bert.pytorch.evaluation import BertEvaluation
-from app.extraction.bert.pytorch.metrics import EvalMetrics
+from app.extraction.bert.checkpoint import BertPytorchCheckpoint
+from app.extraction.bert.decoding import OCRWordDecoder
+from app.extraction.bert.evaluation import BertEvaluation
+from app.extraction.bert.metrics import EvalMetrics
 from app.extraction.enums import IGNORE_INDEX
 from app.pipelines.bert.training import TrainingResult
 

@@ -1,6 +1,6 @@
 import pytest
 
-from app.extraction.bert.pytorch.schema import InvoiceLabelSchema as BertLabelSchema
+from app.extraction.bert.schema import InvoiceLabelSchema as BertLabelSchema
 from app.extraction.enums import FIELD_TO_ENTITY
 from app.extraction.layoutlm.schema import InvoiceLabelSchema
 

@@ -12,7 +12,7 @@ from app.datasets.docile.enums import DocileSplit
 from app.datasets.docile.loader import DocileDatasetLoader
 from app.datasets.docile.order import OCRReadingOrder
 from app.datasets.docile.preparation import DocileInvoicesPreparation
-from app.extraction.bert.pytorch.docile.builder import DocileRecordBuilder
+from app.extraction.bert.builder import InvoiceRecordBuilder
 from app.pipelines.bert.split import DatasetsSplit
 
 
@@ -69,7 +69,7 @@ def test_preparation_roundtrip_and_pipeline_selection(
     if extension == "parquet":
         frame = pd.read_parquet(output)
         frame["json_data"] = frame["json_data"].map(json.loads)
-        records, rejected = DocileRecordBuilder().build(frame)
+        records, rejected = InvoiceRecordBuilder().build(frame)
         assert len(records) == 12 and not rejected
         partitions = DatasetsSplit.create(frame, 42)
         assert (len(partitions.train), len(partitions.val), len(partitions.test)) == (

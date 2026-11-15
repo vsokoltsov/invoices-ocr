@@ -11,7 +11,7 @@ from app.datasets.docile.corrections import DocileAnnotationCorrections
 from app.datasets.docile.downloader import DocileDatasetDownloader
 from app.datasets.docile.loader import DocileDatasetLoader
 from app.datasets.docile.preparation import DocileInvoicesPreparation
-from app.extraction.bert.pytorch.docile.builder import DocileRecordBuilder
+from app.extraction.bert.builder import InvoiceRecordBuilder
 from commands import cli
 
 
@@ -210,7 +210,7 @@ def test_cli_rebuilds_cached_data_with_corrections_and_audit(
     frame["json_data"] = frame["json_data"].map(json.loads)
     if extension == "csv":
         frame["text_with_boxes"] = frame["text_with_boxes"].map(json.loads)
-    records, rejected = DocileRecordBuilder().build(frame)
+    records, rejected = InvoiceRecordBuilder().build(frame)
     assert not rejected
     corrected_record = next(
         record for record in records if record["document_id"] == "doc-0"

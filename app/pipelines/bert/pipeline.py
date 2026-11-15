@@ -10,13 +10,13 @@ from transformers import AutoTokenizer, set_seed
 from transformers.tokenization_utils_tokenizers import TokenizersBackend
 
 from app.aggregates.bert.params import BertPytorchParams
-from app.extraction.bert.pytorch.collation import InvoiceDataCollator
-from app.extraction.bert.pytorch.decoding import OCRWordDecoder
-from app.extraction.bert.pytorch.docile.builder import DocileRecordBuilder
-from app.extraction.bert.pytorch.docile.item_builder import DocileItemRecordBuilder
-from app.extraction.bert.pytorch.inspector import EntityErrorInspector
-from app.extraction.bert.pytorch.model import BertFieldExtractor
-from app.extraction.bert.pytorch.publisher import ClearMLPublisher
+from app.extraction.bert.builder import InvoiceRecordBuilder
+from app.extraction.bert.collation import InvoiceDataCollator
+from app.extraction.bert.decoding import OCRWordDecoder
+from app.extraction.bert.inspector import EntityErrorInspector
+from app.extraction.bert.item_builder import ItemRecordBuilder
+from app.extraction.bert.model import BertFieldExtractor
+from app.extraction.bert.publisher import ClearMLPublisher
 from app.pipelines.bert.builder import InvoicesBuilder
 from app.pipelines.bert.dataloader import InvoiceDataLoader
 from app.pipelines.bert.evaluate import EvaluateTraining
@@ -60,9 +60,7 @@ class BertTrainingPipeline:
         )
         output_dir.mkdir(parents=True, exist_ok=True)
         builder = (
-            DocileItemRecordBuilder()
-            if params.line_items_only
-            else DocileRecordBuilder()
+            ItemRecordBuilder() if params.line_items_only else InvoiceRecordBuilder()
         )
         schema = builder.label_schema
         config = {**asdict(params), "field_to_entity": schema.field_to_entity}

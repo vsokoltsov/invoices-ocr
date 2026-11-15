@@ -137,13 +137,11 @@ def test_training_rejects_removed_download_options(settings):
         )
 
 
-def test_dataset_command_uses_dataset_config_defaults(settings):
-    args = cli.build_parser(settings).parse_args(
-        ["datasets", "download", "kaggle-invoices"]
-    )
-    assert args.DESTINATION_PATH == settings.KAGGLE_INVOICES.DESTINATION_PATH
-    assert args.ARCHIVE_PATH == settings.KAGGLE_INVOICES.ARCHIVE_PATH
-    assert args.OUTPUT_PATH == settings.KAGGLE_INVOICES.OUTPUT_PATH
+def test_dataset_command_uses_docile_config_defaults(settings):
+    args = cli.build_parser(settings).parse_args(["datasets", "download", "docile"])
+    assert args.DESTINATION_PATH == settings.DOCILE.DESTINATION_PATH
+    assert args.OUTPUT_PATH == settings.DOCILE.OUTPUT_PATH
+    assert args.SPLIT is settings.DOCILE.SPLIT
 
 
 def test_docile_split_cli_uses_enum_and_rejects_invalid_values(settings):

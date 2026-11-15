@@ -7,12 +7,12 @@ from torch import nn
 from torch.utils.data import DataLoader
 from transformers.tokenization_utils_tokenizers import TokenizersBackend
 
-from app.extraction.bert.pytorch.checkpoint import BertPytorchCheckpoint
-from app.extraction.bert.pytorch.decoding import OCRWordDecoder
-from app.extraction.bert.pytorch.inspector import EntityErrorInspector
-from app.extraction.bert.pytorch.model import BertFieldExtractor
-from app.extraction.bert.pytorch.schema import InvoiceLabelSchema
-from app.extraction.bert.pytorch.training import OCRInvoiceTraining
+from app.extraction.bert.checkpoint import BertPytorchCheckpoint
+from app.extraction.bert.decoding import OCRWordDecoder
+from app.extraction.bert.inspector import EntityErrorInspector
+from app.extraction.bert.model import BertFieldExtractor
+from app.extraction.bert.schema import InvoiceLabelSchema
+from app.extraction.bert.training import OCRInvoiceTraining
 from app.extraction.enums import IGNORE_INDEX
 from app.pipelines.bert.builder import BuildResult
 from app.pipelines.bert.split import DatasetsSplit

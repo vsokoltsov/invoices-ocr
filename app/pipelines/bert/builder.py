@@ -5,7 +5,7 @@ from typing import NamedTuple
 
 import pandas as pd
 
-from app.extraction.bert.pytorch.docile.builder import DocileRecordBuilder
+from app.extraction.bert.builder import InvoiceRecordBuilder
 from app.pipelines.bert.split import DatasetsSplit
 
 
@@ -16,7 +16,7 @@ class BuildResult(NamedTuple):
 
 @dataclass
 class InvoicesBuilder:
-    builder: DocileRecordBuilder
+    builder: InvoiceRecordBuilder
     output_dir: Path
 
     def build(self, split: DatasetsSplit) -> BuildResult:
