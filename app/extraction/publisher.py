@@ -73,9 +73,7 @@ class ClearMLPublisher(ABC):
             RuntimeError: ClearML reports a failed artifact upload.
         """
         # Fail on incomplete local outputs before creating a remote task.
-        files = self.artifacts.publication_files()
-        config = self.artifacts.load_config()
-        metrics = self.artifacts.load_metrics()
+        self.artifacts.publication_files()
         task = Task.init(
             project_name=self.project_name,
             task_name=self.task_name,
@@ -85,29 +83,48 @@ class ClearMLPublisher(ABC):
             auto_connect_arg_parser=False,
         )
         try:
-            task.connect(config, name="Training")
-            model = OutputModel(
-                task=task,
-                name=f"{self.task_name}-best",
-                framework="PyTorch",
-                config_dict=config,
-            )
-            self.upload_weights(model)
-            for name, artifact in self.artifact_payloads(
-                files, config, metrics
-            ).items():
-                if not task.upload_artifact(
-                    name=name, artifact_object=artifact, wait_on_upload=True
-                ):
-                    raise RuntimeError(f"ClearML upload failed: {name}")
-            for name, value in self.test_scalars(metrics).items():
-                task.get_logger().report_scalar(
-                    title="Test", series=name, value=value, iteration=0
-                )
-            return model.id
+            return self.publish_to(task)
         except Exception as error:
             # Preserve the upload failure in both ClearML and the pipeline caller.
             task.mark_failed(status_reason=str(error))
             raise
         finally:
             task.close()
+
+    def publish_to(self, task: Task) -> str:
+        """Publish into an existing task without changing its lifecycle.
+
+        Args:
+            task: Active ClearML task owned by a pipeline worker or caller.
+
+        Returns:
+            Registered ClearML model ID.
+
+        Raises:
+            RuntimeError: An artifact upload fails.
+            FileNotFoundError: A required local output is absent.
+
+        The caller owns task completion and failure reporting. This allows the
+        pipeline worker to upload its return value before closing its task.
+        """
+        files = self.artifacts.publication_files()
+        config = self.artifacts.load_config()
+        metrics = self.artifacts.load_metrics()
+        task.connect(config, name="Training")
+        model = OutputModel(
+            task=task,
+            name=f"{self.task_name}-best",
+            framework="PyTorch",
+            config_dict=config,
+        )
+        self.upload_weights(model)
+        for name, artifact in self.artifact_payloads(files, config, metrics).items():
+            if not task.upload_artifact(
+                name=name, artifact_object=artifact, wait_on_upload=True
+            ):
+                raise RuntimeError(f"ClearML upload failed: {name}")
+        for name, value in self.test_scalars(metrics).items():
+            task.get_logger().report_scalar(
+                title="Test", series=name, value=value, iteration=0
+            )
+        return model.id

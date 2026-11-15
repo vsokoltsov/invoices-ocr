@@ -73,11 +73,23 @@ class DataLoaders(ABC):
             Loaders keyed by train, val, and test.
         """
         return {
-            name: DataLoader(
-                self.create_dataset(
-                    getattr(build_result.records, name), training=name == "train"
-                ),
-                **self.loader_options(training=name == "train"),
+            name: self.create_loader(
+                getattr(build_result.records, name), training=name == "train"
             )
             for name in ("train", "val", "test")
         }
+
+    def create_loader(self, frame: pd.DataFrame, *, training: bool) -> DataLoader:
+        """Build one partition without loading unrelated training records.
+
+        Args:
+            frame: Prepared records for the selected partition.
+            training: Whether to enable training shuffle and omit scoring metadata.
+
+        Returns:
+            Configured loader for this partition.
+        """
+        return DataLoader(
+            self.create_dataset(frame, training=training),
+            **self.loader_options(training=training),
+        )
