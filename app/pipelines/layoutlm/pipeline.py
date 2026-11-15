@@ -1,69 +1,55 @@
-import random
 from dataclasses import asdict, dataclass
 from typing import cast
 
-import numpy as np
-import pandas as pd
-import torch
-from pipefunc import PipeFunc, Pipeline
-from transformers import AutoTokenizer, LayoutLMv3ImageProcessor
+from transformers import AutoTokenizer, LayoutLMv3ImageProcessor, set_seed
 from transformers.tokenization_utils_tokenizers import TokenizersBackend
 
-from app.aggregates.layoutlm.params import LayoutLMDevice, LayoutLMTrainingParams
+from app.aggregates.layoutlm.params import LayoutLMTrainingParams
 from app.extraction.layoutlm.artifacts import LayoutLMArtifacts
 from app.extraction.layoutlm.builder import InvoiceBuilder
 from app.extraction.layoutlm.converter import AttachmentToImageConverter
 from app.extraction.layoutlm.model import LayoutLMFieldExtractor
 from app.extraction.layoutlm.publisher import ClearMLPublisher
 from app.extraction.schema import InvoiceLabelSchema
+from app.pipelines.device import DeviceSelector
 from app.pipelines.layoutlm.builder import BuildInvoices
 from app.pipelines.layoutlm.dataloader import InvoiceDataLoaders
 from app.pipelines.layoutlm.evaluate import EvaluateTraining
-from app.pipelines.layoutlm.publish import PublishModel
-from app.pipelines.layoutlm.split import DatasetsSplit
 from app.pipelines.layoutlm.training import LayoutLMTraining
+from app.pipelines.loading import DocileDataset
+from app.pipelines.pipeline import TrainingPipeline
+from app.pipelines.publish import PublishModel
 
 
 @dataclass
 class LayoutLMTrainingPipeline:
+    """Configure LayoutLM-specific components for the shared training graph.
+
+    Attributes:
+        params: Fixed dataset, model, image-cache, and optimization settings.
+    """
+
     params: LayoutLMTrainingParams
 
-    def _device(self) -> torch.device:
-        if self.params.device == LayoutLMDevice.AUTO:
-            if torch.cuda.is_available():
-                return torch.device("cuda")
-            if torch.backends.mps.is_available():
-                return torch.device("mps")
-            return torch.device("cpu")
-        if self.params.device == LayoutLMDevice.CUDA and not torch.cuda.is_available():
-            raise ValueError("CUDA was requested but is not available")
-        if (
-            self.params.device == LayoutLMDevice.MPS
-            and not torch.backends.mps.is_available()
-        ):
-            raise ValueError("MPS was requested but is not available")
-        return torch.device(str(self.params.device))
-
     def run(self) -> str:
-        """Train from prepared DocILE data and save run, split, and evaluation artifacts."""
-        random.seed(self.params.random_seed)
-        np.random.seed(self.params.random_seed)
-        torch.manual_seed(self.params.random_seed)
+        """Configure LayoutLM steps and execute the shared training graph.
 
-        if torch.cuda.is_available():
-            torch.cuda.manual_seed_all(self.params.random_seed)
+        Returns:
+            Registered ClearML model ID.
 
-        device = self._device()
-        df = pd.read_parquet(self.params.dataset_path)
-        required = {"document_id", "json_data", "text_with_boxes", "pdf_path"}
-        if missing := required - set(df.columns):
-            raise ValueError(f"Dataset is missing columns: {sorted(missing)}")
-        if df["document_id"].isna().any() or df["document_id"].duplicated().any():
-            raise ValueError("Document IDs must be present and unique before splitting")
-        if len(df) < 6:
-            raise ValueError(
-                "At least six documents are required for an 80/10/10 split"
-            )
+        Raises:
+            ValueError: Source documents, the requested device, or tokenization
+                settings are invalid.
+
+        Saves processor settings and run configuration before executing the graph.
+        Model, image-cache, and optimization settings come from constructor params.
+        """
+        set_seed(self.params.random_seed)
+        device = DeviceSelector(self.params.device).resolve()
+        df = DocileDataset(
+            self.params.dataset_path,
+            frozenset({"document_id", "json_data", "text_with_boxes", "pdf_path"}),
+        ).load()
         artifacts = LayoutLMArtifacts.from_params(self.params)
         artifacts.prepare()
         schema = InvoiceLabelSchema()
@@ -122,16 +108,11 @@ class LayoutLMTrainingPipeline:
         publisher_step = PublishModel(
             publisher=ClearMLPublisher(artifacts),
         )
-        pipeline = Pipeline(
-            [
-                PipeFunc(DatasetsSplit.create, output_name="split"),
-                PipeFunc(build_step.build, output_name="build_result"),
-                PipeFunc(dataloaders_step.build, output_name="dataloaders"),
-                PipeFunc(training_step.train, output_name="train_result"),
-                PipeFunc(eval_training_step.eval, output_name="evaluation_result"),
-                PipeFunc(publisher_step.publish, output_name="model_id"),
-            ]
-        )
-        return pipeline.run(
-            "model_id", kwargs={"df": df, "random_seed": self.params.random_seed}
-        )
+        return TrainingPipeline(
+            random_seed=self.params.random_seed,
+            build=build_step.build,
+            dataloaders=dataloaders_step.build,
+            train=training_step.train,
+            evaluate=eval_training_step.eval,
+            publish=publisher_step.publish,
+        ).run(df)

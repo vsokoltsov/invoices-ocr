@@ -12,6 +12,7 @@ from app.extraction.layoutlm.model import LayoutLMFieldExtractor
 from app.extraction.layoutlm.training import OCRInvoiceTraining
 from app.extraction.results import TrainingResult
 from app.extraction.schema import InvoiceLabelSchema
+from app.pipelines.training import TrainingRun
 
 
 @dataclass
@@ -84,11 +85,4 @@ class LayoutLMTraining:
             epochs=self.epochs,
             artifacts=self.artifacts,
         )
-        try:
-            trainer.train()
-        finally:
-            self.model.to("cpu")
-        return TrainingResult(
-            checkpoint_path=self.artifacts.checkpoint_path,
-            history_path=self.artifacts.history_path,
-        )
+        return TrainingRun(trainer, self.model, self.artifacts).run()

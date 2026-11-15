@@ -8,7 +8,7 @@ from app.extraction import publisher as publisher_module
 from app.extraction.layoutlm.artifacts import LayoutLMArtifacts
 from app.extraction.layoutlm.publisher import ClearMLPublisher
 from app.extraction.results import EvaluationResult
-from app.pipelines.layoutlm.publish import PublishModel
+from app.pipelines.publish import PublishModel
 
 
 @pytest.fixture

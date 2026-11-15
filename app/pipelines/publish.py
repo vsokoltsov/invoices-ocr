@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from app.extraction.bert.publisher import ClearMLPublisher
+from app.extraction.publisher import ClearMLPublisher
 from app.extraction.results import EvaluationResult
 
 

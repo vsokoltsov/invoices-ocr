@@ -2,9 +2,6 @@ import json
 from dataclasses import asdict, dataclass
 from typing import cast
 
-import pandas as pd
-import torch
-from pipefunc import PipeFunc, Pipeline
 from transformers import AutoTokenizer, set_seed
 from transformers.tokenization_utils_tokenizers import TokenizersBackend
 
@@ -20,40 +17,46 @@ from app.extraction.bert.publisher import ClearMLPublisher
 from app.pipelines.bert.builder import InvoicesBuilder
 from app.pipelines.bert.dataloader import InvoiceDataLoader
 from app.pipelines.bert.evaluate import EvaluateTraining
-from app.pipelines.bert.publish import PublishModel
-from app.pipelines.bert.split import DatasetsSplit
 from app.pipelines.bert.training import BertTraining
+from app.pipelines.device import DeviceSelector
+from app.pipelines.loading import DocileDataset
+from app.pipelines.pipeline import TrainingPipeline
+from app.pipelines.publish import PublishModel
 
 
 @dataclass
 class BertTrainingPipeline:
+    """Configure BERT-specific components for the shared training graph.
+
+    Attributes:
+        params: Fixed dataset, model, optimization, and output settings.
+    """
+
     params: BertPytorchParams
 
     def run(self) -> str:
-        """Train one DocILE model, evaluate its saved checkpoint, and publish it."""
+        """Configure BERT steps and execute the shared training graph.
+
+        Returns:
+            Registered ClearML model ID.
+
+        Raises:
+            ValueError: Source documents are invalid or tokenization is not fast.
+
+        Validates prepared Parquet inputs before loading model weights. Model,
+        storage, and optimization settings come from the constructor parameters.
+        """
         params = self.params
 
         set_seed(params.random_seed)
-        frame = pd.read_parquet(params.dataset_path)
-        required = {"document_id", "ocr_text", "text_with_boxes", "json_data"}
-        if missing := required - set(frame.columns):
-            raise ValueError(f"Dataset is missing columns: {sorted(missing)}")
-        if frame["document_id"].isna().any() or frame["document_id"].duplicated().any():
-            raise ValueError("Document IDs must be present and unique before splitting")
-        if len(frame) < 6:
-            raise ValueError(
-                "At least six documents are required for an 80/10/10 split"
-            )
+        frame = DocileDataset(
+            params.dataset_path,
+            frozenset({"document_id", "ocr_text", "text_with_boxes", "json_data"}),
+        ).load()
         frame["json_data"] = frame["json_data"].map(
             lambda value: json.loads(value) if isinstance(value, str) else value
         )
-        device = torch.device(
-            "cuda"
-            if torch.cuda.is_available()
-            else "mps"
-            if torch.backends.mps.is_available()
-            else "cpu"
-        )
+        device = DeviceSelector().resolve()
         artifacts = BertArtifacts.from_params(params)
         artifacts.prepare()
         builder = (
@@ -110,16 +113,11 @@ class BertTrainingPipeline:
                 task_name="bert-items" if params.line_items_only else "bert-body",
             )
         )
-        pipeline = Pipeline(
-            [
-                PipeFunc(DatasetsSplit.create, output_name="split"),
-                PipeFunc(build_step.build, output_name="build_result"),
-                PipeFunc(loader_step.build, output_name="dataloaders"),
-                PipeFunc(training_step.train, output_name="train_result"),
-                PipeFunc(evaluation_step.eval, output_name="evaluation_result"),
-                PipeFunc(publisher_step.publish, output_name="model_id"),
-            ]
-        )
-        return pipeline.run(
-            "model_id", kwargs={"df": frame, "random_seed": params.random_seed}
-        )
+        return TrainingPipeline(
+            random_seed=params.random_seed,
+            build=build_step.build,
+            dataloaders=loader_step.build,
+            train=training_step.train,
+            evaluate=evaluation_step.eval,
+            publish=publisher_step.publish,
+        ).run(frame)

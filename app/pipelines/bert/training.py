@@ -16,8 +16,9 @@ from app.extraction.enums import IGNORE_INDEX
 from app.extraction.results import TrainingResult
 from app.extraction.schema import InvoiceLabelSchema
 from app.extraction.training import BestCheckpointWriter
-from app.pipelines.bert.builder import BuildResult
-from app.pipelines.bert.split import DatasetsSplit
+from app.pipelines.builder import BuildResult
+from app.pipelines.split import DatasetsSplit
+from app.pipelines.training import TrainingRun
 
 
 @dataclass
@@ -108,10 +109,4 @@ class BertTraining:
                 ),
             ),
         )
-        try:
-            trainer.train()
-        finally:
-            self.model.to("cpu")
-        return TrainingResult(
-            self.artifacts.checkpoint_dir, self.artifacts.history_path
-        )
+        return TrainingRun(trainer, self.model, self.artifacts).run()

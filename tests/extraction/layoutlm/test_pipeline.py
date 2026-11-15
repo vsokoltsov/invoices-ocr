@@ -1,5 +1,4 @@
 import json
-from dataclasses import replace
 from pathlib import Path
 from unittest.mock import Mock
 
@@ -13,7 +12,7 @@ from app.extraction.layoutlm.model import LayoutLMFieldExtractor
 from app.extraction.layoutlm.publisher import ClearMLPublisher
 from app.pipelines.layoutlm import pipeline as pipeline_module
 from app.pipelines.layoutlm.pipeline import LayoutLMTrainingPipeline
-from app.pipelines.layoutlm.split import DatasetsSplit
+from app.pipelines.split import DatasetsSplit
 from commands import cli
 
 
@@ -163,33 +162,3 @@ def test_split_is_repeatable_and_keeps_documents_disjoint():
     assert train | val | test == set(range(20))
     for name in ("train", "val", "test"):
         pd.testing.assert_frame_equal(getattr(first, name), getattr(second, name))
-
-
-@pytest.mark.parametrize(
-    ("requested", "cuda", "mps", "expected"),
-    [
-        (LayoutLMDevice.CPU, True, True, "cpu"),
-        (LayoutLMDevice.AUTO, True, False, "cuda"),
-        (LayoutLMDevice.AUTO, False, True, "mps"),
-        (LayoutLMDevice.AUTO, False, False, "cpu"),
-    ],
-)
-def test_device_selection_honors_config(
-    pipeline_params, monkeypatch, requested, cuda, mps, expected
-):
-    monkeypatch.setattr(torch.cuda, "is_available", lambda: cuda)
-    monkeypatch.setattr(torch.backends.mps, "is_available", lambda: mps)
-    assert (
-        LayoutLMTrainingPipeline(replace(pipeline_params, device=requested))
-        ._device()
-        .type
-        == expected
-    )
-
-
-@pytest.mark.parametrize("requested", [LayoutLMDevice.CUDA, LayoutLMDevice.MPS])
-def test_explicit_unavailable_device_fails(pipeline_params, monkeypatch, requested):
-    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
-    monkeypatch.setattr(torch.backends.mps, "is_available", lambda: False)
-    with pytest.raises(ValueError, match="not available"):
-        LayoutLMTrainingPipeline(replace(pipeline_params, device=requested))._device()

@@ -4,6 +4,7 @@ from unittest.mock import Mock
 
 import pandas as pd
 import pytest
+import torch
 from transformers import BertConfig, BertModel
 
 from app.config import Settings
@@ -72,8 +73,8 @@ def test_docile_cli_download_and_training_use_shared_dataset(
     monkeypatch.setattr(
         model_module.AutoModel, "from_pretrained", lambda **kw: deepcopy(encoder)
     )
-    monkeypatch.setattr(pipeline.torch.cuda, "is_available", lambda: False)
-    monkeypatch.setattr(pipeline.torch.backends.mps, "is_available", lambda: False)
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+    monkeypatch.setattr(torch.backends.mps, "is_available", lambda: False)
     history = tmp_path / "docile-history.csv"
     cli.main(
         [

@@ -21,7 +21,7 @@ from app.pipelines.bert import pipeline as pipeline_module
 from app.pipelines.bert.builder import InvoicesBuilder
 from app.pipelines.bert.evaluate import EvaluateTraining
 from app.pipelines.bert.pipeline import BertTrainingPipeline
-from app.pipelines.bert.split import DatasetsSplit
+from app.pipelines.split import DatasetsSplit
 
 
 @pytest.fixture
