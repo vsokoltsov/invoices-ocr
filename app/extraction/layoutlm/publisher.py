@@ -1,23 +1,20 @@
-import json
 from dataclasses import dataclass
-from pathlib import Path
 
 from clearml import OutputModel, Task
+
+from app.extraction.layoutlm.artifacts import LayoutLMArtifacts
 
 
 @dataclass
 class ClearMLPublisher:
+    artifacts: LayoutLMArtifacts
     project_name: str = "ocr"
     task_name: str = "layoutlmv3"
 
-    def run(self, checkpoint_path: Path, output_dir: Path) -> str:
-        checkpoint_path = checkpoint_path.resolve()
-        output_dir = output_dir.resolve()
-
-        config = json.loads((output_dir / "config.json").read_text(encoding="utf-8"))
-        metrics = json.loads(
-            (output_dir / "test_metrics.json").read_text(encoding="utf-8")
-        )
+    def run(self) -> str:
+        files = self.artifacts.publication_files()
+        config = self.artifacts.load_config()
+        metrics = self.artifacts.load_metrics()
 
         task = Task.init(
             project_name=self.project_name,
@@ -37,21 +34,15 @@ class ClearMLPublisher:
                 config_dict=config,
             )
             model.update_weights(
-                weights_filename=str(checkpoint_path),
+                weights_filename=str(self.artifacts.checkpoint_path),
                 auto_delete_file=False,
                 async_enable=False,
             )
 
-            for name in (
-                "test_metrics.json",
-                "history.csv",
-                "config.json",
-                "split_manifest.csv",
-                "processor",
-            ):
+            for name, path in files.items():
                 uploaded = task.upload_artifact(
                     name=name,
-                    artifact_object=output_dir / name,
+                    artifact_object=path,
                     wait_on_upload=True,
                 )
                 if not uploaded:

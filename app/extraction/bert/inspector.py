@@ -1,6 +1,5 @@
 import json
 from dataclasses import dataclass
-from pathlib import Path
 
 import pandas as pd
 import torch
@@ -8,6 +7,7 @@ from seqeval.metrics import classification_report
 from seqeval.metrics.sequence_labeling import get_entities
 from transformers import PreTrainedTokenizerBase
 
+from app.extraction.bert.artifacts import BertArtifacts
 from app.extraction.bert.datasets import InvoiceDataset
 from app.extraction.bert.decoding import OCRWordDecoder
 from app.extraction.bert.schema import InvoiceLabelSchema
@@ -60,11 +60,9 @@ class EntityErrorInspector:
         return entities
 
     @torch.inference_mode()
-    def run(self, records, output_dir, *, epoch: int):
+    def run(self, records, artifacts: BertArtifacts, *, epoch: int):
         """Export validation entity metrics and errors with the evaluation mask."""
         self.model.eval()
-        output_dir = Path(output_dir)
-        output_dir.mkdir(parents=True, exist_ok=True)
 
         errors = []
         actual_sequences = []
@@ -184,16 +182,6 @@ class EntityErrorInspector:
 
         report_df["epoch"] = epoch
         errors_df["epoch"] = epoch
-        report_df.to_csv(
-            output_dir / "per_entity.csv",
-            index_label="entity",
-        )
-        errors_df.to_csv(output_dir / "entity_errors.csv", index=False)
-
-        for status in ("false_positive", "false_negative"):
-            errors_df.loc[errors_df["status"] == status].to_csv(
-                output_dir / f"{status}.csv",
-                index=False,
-            )
+        artifacts.save_diagnostics(report_df, errors_df)
 
         return report_df, errors_df

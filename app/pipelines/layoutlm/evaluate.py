@@ -1,4 +1,3 @@
-import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -7,6 +6,7 @@ from torch import nn
 from torch.utils.data import DataLoader
 
 from app.extraction.enums import IGNORE_INDEX
+from app.extraction.layoutlm.artifacts import LayoutLMArtifacts
 from app.extraction.layoutlm.evaluation import LayoutLMEvaluation
 from app.extraction.layoutlm.metrics import EpochMetrics
 from app.extraction.layoutlm.model import LayoutLMFieldExtractor
@@ -22,16 +22,15 @@ class EvaluationResult:
 
 @dataclass
 class EvaluateTraining:
-    output_dir: Path
+    artifacts: LayoutLMArtifacts
     device: torch.device
 
     def eval(
         self, train_result: TrainingResult, dataloaders: dict[str, DataLoader]
     ) -> EvaluationResult:
         """Load the best saved checkpoint and evaluate it on held-out test pages."""
-        checkpoint = torch.load(
-            train_result.checkpoint_path, map_location="cpu", weights_only=True
-        )
+        self.artifacts.validate_checkpoint_reference(train_result.checkpoint_path)
+        checkpoint = self.artifacts.load_checkpoint()
         schema = InvoiceLabelSchema(checkpoint["field_to_entity"])
         if tuple(checkpoint["labels"]) != schema.labels:
             raise ValueError("Checkpoint labels do not match its field schema")
@@ -54,9 +53,5 @@ class EvaluateTraining:
             metrics = evaluator.evaluate(dataloaders["test"], epoch=checkpoint["epoch"])
         finally:
             model.to("cpu")
-        self.output_dir.mkdir(parents=True, exist_ok=True)
-        metrics_path = self.output_dir / "test_metrics.json"
-        metrics_path.write_text(
-            json.dumps(asdict(metrics), indent=2, allow_nan=False), encoding="utf-8"
-        )
+        metrics_path = self.artifacts.save_metrics(asdict(metrics))
         return EvaluationResult(train_result.checkpoint_path, metrics_path)

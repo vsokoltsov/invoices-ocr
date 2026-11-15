@@ -1,34 +1,27 @@
 from dataclasses import dataclass
-from pathlib import Path
 
 import pymupdf
 from PIL import Image
+
+from app.extraction.layoutlm.artifacts import LayoutLMArtifacts
 
 
 @dataclass
 class AttachmentToImageConverter:
     """Render PDF pages and reuse RGB PNGs cached by document, page, and DPI."""
 
-    images_path: Path
-
-    def __post_init__(self):
-        self.images_path = Path(self.images_path)
+    artifacts: LayoutLMArtifacts
 
     def load_page_image(self, page, dpi=150) -> Image.Image:
         if int(page["page"]) < 0:
             raise ValueError("Page index must be nonnegative")
         if dpi <= 0:
             raise ValueError("dpi must be positive")
-        cache_path = (
-            self.images_path
-            / f"dpi_{dpi}"
-            / page["document_id"]
-            / f"page_{int(page['page']):04d}.png"
+        cached = self.artifacts.load_page_image(
+            page["document_id"], int(page["page"]), dpi
         )
-
-        if cache_path.is_file():
-            with Image.open(cache_path) as image:
-                return image.convert("RGB")
+        if cached is not None:
+            return cached
 
         with pymupdf.open(page["pdf_path"]) as document:
             pdf_page = document.load_page(int(page["page"]))
@@ -43,6 +36,7 @@ class AttachmentToImageConverter:
                 pixmap.samples,
             )
 
-        cache_path.parent.mkdir(parents=True, exist_ok=True)
-        image.save(cache_path)
+        self.artifacts.save_page_image(
+            page["document_id"], int(page["page"]), dpi, image
+        )
         return image

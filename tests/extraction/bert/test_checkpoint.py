@@ -6,6 +6,7 @@ import torch
 from transformers import BertConfig, BertModel
 
 from app.aggregates.bert.params import BertPytorchDebugParams
+from app.extraction.bert.artifacts import BertArtifacts
 from app.extraction.bert.checkpoint import BertPytorchCheckpoint
 from app.extraction.bert.debug import BertPytorchDebugPipeline
 from app.extraction.bert.model import BertFieldExtractor
@@ -48,7 +49,7 @@ def test_checkpoint_reloads_weights_tokenizer_and_validation_without_network(
         {"start": 0, "end": 4, "text": "Acme"},
         {"start": 5, "end": 16, "text": "Corporation"},
     ]
-    checkpoint = BertPytorchCheckpoint(tmp_path / "checkpoint")
+    checkpoint = BertPytorchCheckpoint(BertArtifacts(tmp_path / "checkpoint"))
     checkpoint.save(
         model,
         fast_tokenizer,
@@ -72,25 +73,27 @@ def test_checkpoint_reloads_weights_tokenizer_and_validation_without_network(
         )
     output = BertPytorchDebugPipeline().run(
         BertPytorchDebugParams(
-            str(checkpoint.directory), str(tmp_path / "debug"), "cpu"
+            str(checkpoint.artifacts.checkpoint_dir), str(tmp_path / "debug"), "cpu"
         )
     )
     assert set(pd.read_csv(output)["decoder"]) == {"token_argmax", "ocr_word"}
     # A checkpoint without OCR words cannot silently use whitespace as OCR words.
-    path = checkpoint.directory / "validation.json"
+    path = checkpoint.artifacts.checkpoint_dir / "validation.json"
     del payload["records"][0]["text_with_boxes"]
     path.write_text(json.dumps(payload))
     with pytest.raises(ValueError, match="DocILE validation words"):
         BertPytorchDebugPipeline().run(
             BertPytorchDebugParams(
-                str(checkpoint.directory), str(tmp_path / "invalid"), "cpu"
+                str(checkpoint.artifacts.checkpoint_dir),
+                str(tmp_path / "invalid"),
+                "cpu",
             )
         )
 
 
 def test_debug_fails_for_missing_artifacts_and_invalid_configuration(tmp_path):
     pipeline = BertPytorchDebugPipeline()
-    with pytest.raises(FileNotFoundError, match="Missing checkpoint artifact"):
+    with pytest.raises(FileNotFoundError, match="Missing artifact"):
         pipeline.run(
             BertPytorchDebugParams(str(tmp_path / "missing"), str(tmp_path / "out"))
         )

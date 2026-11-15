@@ -1,5 +1,4 @@
 from dataclasses import asdict, dataclass
-from pathlib import Path
 
 import pandas as pd
 import structlog
@@ -8,6 +7,7 @@ from torch import nn
 from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
 
+from app.extraction.bert.artifacts import BertArtifacts
 from app.extraction.bert.decoding import OCRWordDecoder
 from app.extraction.bert.evaluation import BertEvaluation
 from app.extraction.bert.inspector import EntityErrorInspector
@@ -33,7 +33,7 @@ class OCRInvoiceTraining:
     epochs: int
     id2label: dict[int, str]
     inspector: EntityErrorInspector | None = None
-    diagnostic_dir: str | Path | None = None
+    artifacts: BertArtifacts | None = None
     validation_records: list[dict] | None = None
     word_decoder: OCRWordDecoder | None = None
 
@@ -41,12 +41,11 @@ class OCRInvoiceTraining:
         if self.epochs < 1:
             raise ValueError("epochs must be positive.")
         self.metrics = EvalMetrics(self.id2label)
-        self.diagnostic_dir = (
-            Path(self.diagnostic_dir).expanduser().resolve()
-            if self.diagnostic_dir
-            else None
-        )
-        if self.inspector is not None and self.diagnostic_dir is not None:
+        if (
+            self.inspector is not None
+            and self.artifacts is not None
+            and self.artifacts.diagnostics_dir is not None
+        ):
             if self.validation_records is None:
                 raise ValueError("validation_records are required for diagnostics")
 
@@ -135,10 +134,14 @@ class OCRInvoiceTraining:
                 val_loss=validation_metrics.loss,
                 val_f1=validation_metrics.f1,
             )
-            if self.inspector is not None and self.diagnostic_dir is not None:
+            if (
+                self.inspector is not None
+                and self.artifacts is not None
+                and self.artifacts.diagnostics_dir is not None
+            ):
                 self.inspector.run(
                     self.validation_records,
-                    output_dir=Path(self.diagnostic_dir) / f"epoch_{epoch:03d}",
+                    artifacts=self.artifacts.diagnostics(epoch),
                     epoch=epoch,
                 )
 

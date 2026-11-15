@@ -6,6 +6,7 @@ from torch import nn
 from torch.optim.lr_scheduler import LambdaLR
 from torch.utils.data import DataLoader
 
+from app.extraction.layoutlm.artifacts import LayoutLMArtifacts
 from app.extraction.layoutlm.builder import InvoiceBuilder
 from app.extraction.layoutlm.converter import AttachmentToImageConverter
 from app.extraction.layoutlm.dataset import InvoiceDataset
@@ -28,7 +29,9 @@ def test_pdf_annotations_to_training_and_reload(
         pages,
         layout_tokenizer,
         image_processor,
-        AttachmentToImageConverter(tmp_path / "cache"),
+        AttachmentToImageConverter(
+            LayoutLMArtifacts(output_dir=tmp_path, images_path=tmp_path / "cache")
+        ),
         max_length=8,
     )
     model = LayoutLMFieldExtractor(
@@ -47,14 +50,13 @@ def test_pdf_annotations_to_training_and_reload(
         scheduler=LambdaLR(optimizer, lr_lambda=lambda _: 1.0),
         schema=schema,
         epochs=1,
-        output_dir=tmp_path / "results",
-        checkpoint_path=tmp_path / "results" / "best.pt",
+        artifacts=LayoutLMArtifacts(tmp_path / "results"),
     )
     before = model.classifier.weight.detach().clone()
     history = trainer.train()
     assert math.isfinite(history.iloc[0]["validation_loss"])
     assert not torch.equal(before, model.classifier.weight)
-    checkpoint = torch.load(trainer.checkpoint_path, weights_only=True)
+    checkpoint = torch.load(trainer.artifacts.checkpoint_path, weights_only=True)
     assert checkpoint["max_length"] == 8
     assert checkpoint["model_name"] == "local-tiny"
     restored = LayoutLMFieldExtractor(

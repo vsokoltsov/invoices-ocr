@@ -1,9 +1,11 @@
 import json
 from unittest.mock import Mock
 
+import pandas as pd
 import pytest
 
 from app.extraction.layoutlm import publisher as publisher_module
+from app.extraction.layoutlm.artifacts import LayoutLMArtifacts
 from app.extraction.layoutlm.publisher import ClearMLPublisher
 from app.pipelines.layoutlm.evaluate import EvaluationResult
 from app.pipelines.layoutlm.publish import PublishModel
@@ -21,6 +23,10 @@ def publication(tmp_path, monkeypatch):
             }
         )
     )
+    artifacts = LayoutLMArtifacts(tmp_path)
+    artifacts.save_history(pd.DataFrame({"epoch": [1]}))
+    artifacts.save_manifest(pd.DataFrame({"document_id": ["doc"], "split": ["test"]}))
+    artifacts.processor_dir.mkdir()
     checkpoint = tmp_path / "best.pt"
     checkpoint.write_bytes(b"checkpoint")
     task = Mock()
@@ -35,7 +41,10 @@ def test_publisher_uploads_checkpoint_and_artifacts_without_deleting_local_model
     publication, tmp_path
 ):
     checkpoint, task, model = publication
-    assert ClearMLPublisher().run(checkpoint, tmp_path) == "model-id"
+    assert (
+        ClearMLPublisher(LayoutLMArtifacts(tmp_path, checkpoint_path=checkpoint)).run()
+        == "model-id"
+    )
     model.update_weights.assert_called_once_with(
         weights_filename=str(checkpoint.resolve()),
         auto_delete_file=False,
@@ -65,7 +74,7 @@ def test_failed_upload_marks_task_failed_and_closes_it(publication, tmp_path, fa
     else:
         task.upload_artifact.return_value = False
     with pytest.raises(RuntimeError):
-        ClearMLPublisher().run(checkpoint, tmp_path)
+        ClearMLPublisher(LayoutLMArtifacts(tmp_path, checkpoint_path=checkpoint)).run()
     task.mark_failed.assert_called_once()
     task.close.assert_called_once()
 
@@ -73,13 +82,18 @@ def test_failed_upload_marks_task_failed_and_closes_it(publication, tmp_path, fa
 def test_publication_consumes_evaluation_checkpoint_and_keeps_paths_in_constructor(
     tmp_path,
 ):
-    publisher = Mock()
+    publisher = Mock(
+        artifacts=LayoutLMArtifacts(
+            tmp_path, checkpoint_path=tmp_path / "weights" / "best.pt"
+        )
+    )
     publisher.run.return_value = "model-id"
     checkpoint = tmp_path / "weights" / "best.pt"
     result = EvaluationResult(checkpoint, tmp_path / "test_metrics.json")
-    assert PublishModel(publisher, tmp_path).publish(result) == "model-id"
-    publisher.run.assert_called_once_with(
-        checkpoint_path=checkpoint, output_dir=tmp_path
+    assert PublishModel(publisher).publish(result) == "model-id"
+    publisher.run.assert_called_once_with()
+    publisher.artifacts = LayoutLMArtifacts(
+        tmp_path / "different-run", checkpoint_path=checkpoint
     )
     with pytest.raises(ValueError, match="publication directory"):
-        PublishModel(publisher, tmp_path / "different-run").publish(result)
+        PublishModel(publisher).publish(result)

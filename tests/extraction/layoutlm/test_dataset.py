@@ -6,6 +6,7 @@ import torch
 from torch.utils.data import DataLoader
 
 from app.extraction.enums import FIELD_TO_ENTITY
+from app.extraction.layoutlm.artifacts import LayoutLMArtifacts
 from app.extraction.layoutlm.builder import InvoiceBuilder
 from app.extraction.layoutlm.converter import AttachmentToImageConverter
 from app.extraction.layoutlm.dataset import InvoiceDataset
@@ -18,7 +19,9 @@ def test_encoding_preserves_word_alignment_and_caches_float_images(
     tmp_path,
 ):
     pages = InvoiceBuilder(FIELD_TO_ENTITY).prepare_document(document_row)
-    converter = AttachmentToImageConverter(tmp_path / "images")
+    converter = AttachmentToImageConverter(
+        LayoutLMArtifacts(output_dir=tmp_path, images_path=tmp_path / "images")
+    )
     processor = Mock(wraps=image_processor)
     dataset = InvoiceDataset(
         pages, layout_tokenizer, processor, converter, max_length=8
@@ -74,7 +77,9 @@ def test_invalid_window_length_is_rejected(
             [],
             layout_tokenizer,
             image_processor,
-            AttachmentToImageConverter(tmp_path),
+            AttachmentToImageConverter(
+                LayoutLMArtifacts(output_dir=tmp_path, images_path=tmp_path)
+            ),
             max_length=max_length,
         )
 
@@ -95,7 +100,9 @@ def test_invalid_words_fail_before_training(
             [page],
             layout_tokenizer,
             image_processor,
-            AttachmentToImageConverter(tmp_path),
+            AttachmentToImageConverter(
+                LayoutLMArtifacts(output_dir=tmp_path, images_path=tmp_path)
+            ),
             max_length=8,
         )
 
@@ -108,7 +115,9 @@ def test_custom_ignore_index_masks_special_padding_and_continuation_tokens(
         pages,
         layout_tokenizer,
         image_processor,
-        AttachmentToImageConverter(tmp_path),
+        AttachmentToImageConverter(
+            LayoutLMArtifacts(output_dir=tmp_path, images_path=tmp_path)
+        ),
         ignore_index=-7,
         max_length=8,
     )

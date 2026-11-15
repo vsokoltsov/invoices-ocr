@@ -4,6 +4,7 @@ import math
 import torch
 from torch.utils.data import DataLoader
 
+from app.extraction.layoutlm.artifacts import LayoutLMArtifacts
 from app.extraction.layoutlm.builder import InvoiceBuilder
 from app.extraction.layoutlm.converter import AttachmentToImageConverter
 from app.extraction.layoutlm.dataset import InvoiceDataset
@@ -22,7 +23,9 @@ def test_test_step_loads_saved_weights_without_live_trainer(
         pages,
         layout_tokenizer,
         image_processor,
-        AttachmentToImageConverter(tmp_path / "images"),
+        AttachmentToImageConverter(
+            LayoutLMArtifacts(output_dir=tmp_path, images_path=tmp_path / "images")
+        ),
         max_length=8,
     )
     model = LayoutLMFieldExtractor(
@@ -43,7 +46,10 @@ def test_test_step_loads_saved_weights_without_live_trainer(
     # The in-memory classifier cannot be used to produce valid metrics now.
     with torch.no_grad():
         model.classifier.weight.fill_(float("nan"))
-    result = EvaluateTraining(tmp_path / "reports", torch.device("cpu")).eval(
+    result = EvaluateTraining(
+        LayoutLMArtifacts(tmp_path / "reports", checkpoint_path=checkpoint_path),
+        torch.device("cpu"),
+    ).eval(
         TrainingResult(checkpoint_path, tmp_path / "history.csv"),
         {"test": DataLoader(dataset, batch_size=2)},
     )

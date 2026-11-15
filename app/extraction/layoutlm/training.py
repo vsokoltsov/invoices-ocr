@@ -1,5 +1,4 @@
 from dataclasses import asdict, dataclass
-from pathlib import Path
 
 import pandas as pd
 import structlog
@@ -9,6 +8,7 @@ from torch.optim.lr_scheduler import LRScheduler
 from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
 
+from app.extraction.layoutlm.artifacts import LayoutLMArtifacts
 from app.extraction.layoutlm.evaluation import LayoutLMEvaluation, move_inputs
 from app.extraction.layoutlm.metrics import (
     EpochMetrics,
@@ -34,16 +34,13 @@ class OCRInvoiceTraining:
     scheduler: LRScheduler
     schema: InvoiceLabelSchema
     epochs: int
-    output_dir: Path
-    checkpoint_path: Path
+    artifacts: LayoutLMArtifacts
 
     def __post_init__(self) -> None:
         if self.epochs < 1:
             raise ValueError("epochs must be positive")
         if tuple(self.metrics.labels) != self.schema.labels:
             raise ValueError("Metric labels must match the training schema")
-        self.output_dir = Path(self.output_dir)
-        self.checkpoint_path = Path(self.checkpoint_path)
 
     def train_one_epoch(self, epoch: int) -> EpochMetricsResult:
         self.model.train()
@@ -96,8 +93,6 @@ class OCRInvoiceTraining:
 
     def train(self) -> pd.DataFrame:
         """Write history each epoch and save best weights with schema metadata."""
-        self.output_dir.mkdir(parents=True, exist_ok=True)
-        self.checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
         self.model.to(self.device)
         best_state = None
         history = []
@@ -128,10 +123,7 @@ class OCRInvoiceTraining:
             }
 
             history.append(epoch_metrics)
-            pd.DataFrame(history).to_csv(
-                self.output_dir / "history.csv",
-                index=False,
-            )
+            self.artifacts.save_history(pd.DataFrame(history))
             logger.info(
                 "Training results",
                 epoch=f"{epoch}/{self.epochs}",
@@ -153,7 +145,7 @@ class OCRInvoiceTraining:
                 backbone_config = getattr(
                     getattr(self.model, "backbone", None), "config", None
                 )
-                torch.save(
+                self.artifacts.save_checkpoint(
                     {
                         "model_state_dict": best_state,
                         "model_name": getattr(backbone_config, "_name_or_path", None),
@@ -164,7 +156,6 @@ class OCRInvoiceTraining:
                         "epoch": epoch,
                         "val_entity_f1": best_f1,
                     },
-                    self.checkpoint_path,
                 )
         if best_state is not None:
             self.model.load_state_dict(best_state)

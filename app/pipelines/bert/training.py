@@ -7,6 +7,7 @@ from torch import nn
 from torch.utils.data import DataLoader
 from transformers.tokenization_utils_tokenizers import TokenizersBackend
 
+from app.extraction.bert.artifacts import BertArtifacts
 from app.extraction.bert.checkpoint import BertPytorchCheckpoint
 from app.extraction.bert.decoding import OCRWordDecoder
 from app.extraction.bert.inspector import EntityErrorInspector
@@ -35,11 +36,9 @@ class BertTraining:
     epochs: int
     learning_rate: float
     weight_decay: float
-    checkpoint_path: Path
-    history_path: Path
+    artifacts: BertArtifacts
     max_length_tokens: int = 512
     inspector: EntityErrorInspector | None = None
-    diagnostic_dir: Path | None = None
     word_decoder: OCRWordDecoder | None = None
 
     def train(
@@ -63,16 +62,15 @@ class BertTraining:
             epochs=self.epochs,
             id2label=self.schema.id2label,
             inspector=self.inspector,
-            diagnostic_dir=self.diagnostic_dir,
+            artifacts=self.artifacts,
             validation_records=validation_records,
             word_decoder=self.word_decoder,
         )
         try:
             history = trainer.train()
-            self.history_path.parent.mkdir(parents=True, exist_ok=True)
-            history.to_csv(self.history_path, index=False)
+            self.artifacts.save_history(history)
             best_epoch = int(history.loc[history["validation_f1"].idxmax(), "epoch"])
-            BertPytorchCheckpoint(self.checkpoint_path).save(
+            BertPytorchCheckpoint(self.artifacts).save(
                 self.model,
                 self.tokenizer,
                 self.schema,
@@ -85,4 +83,6 @@ class BertTraining:
             )
         finally:
             self.model.to("cpu")
-        return TrainingResult(self.checkpoint_path, self.history_path)
+        return TrainingResult(
+            self.artifacts.checkpoint_dir, self.artifacts.history_path
+        )

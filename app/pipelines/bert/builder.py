@@ -1,10 +1,9 @@
-import json
 from dataclasses import dataclass
-from pathlib import Path
 from typing import NamedTuple
 
 import pandas as pd
 
+from app.extraction.bert.artifacts import BertArtifacts
 from app.extraction.bert.builder import InvoiceRecordBuilder
 from app.pipelines.bert.split import DatasetsSplit
 
@@ -17,11 +16,10 @@ class BuildResult(NamedTuple):
 @dataclass
 class InvoicesBuilder:
     builder: InvoiceRecordBuilder
-    output_dir: Path
+    artifacts: BertArtifacts
 
     def build(self, split: DatasetsSplit) -> BuildResult:
         """Prepare fixed partitions and keep OCR words for DocILE decoding."""
-        self.output_dir.mkdir(parents=True, exist_ok=True)
         records, rejected, manifest = {}, {}, {}
         for name in ("train", "val", "test"):
             frame = getattr(split, name)
@@ -30,7 +28,7 @@ class InvoicesBuilder:
                 failures,
                 columns=pd.Index(["row_index", "document_id", "issues"]),
             )
-            rejected[name].to_csv(self.output_dir / f"{name}_rejected.csv", index=False)
+            self.artifacts.save_rejections(name, rejected[name])
             if not accepted:
                 raise ValueError(f"No accepted records in {name}")
             if "text_with_boxes" in frame:
@@ -42,7 +40,5 @@ class InvoicesBuilder:
             records[name] = pd.DataFrame(accepted)
             for document_id in frame["document_id"]:
                 manifest[str(document_id)] = "validation" if name == "val" else name
-        (self.output_dir / "split_manifest.json").write_text(
-            json.dumps(manifest, indent=2), encoding="utf-8"
-        )
+        self.artifacts.save_manifest(manifest)
         return BuildResult(DatasetsSplit(**records), DatasetsSplit(**rejected))

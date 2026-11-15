@@ -12,6 +12,7 @@ from transformers import BertConfig, BertModel
 from app.aggregates.bert.params import BertPytorchParams
 from app.extraction.bert import model as model_module
 from app.extraction.bert import publisher as publisher_module
+from app.extraction.bert.artifacts import BertArtifacts
 from app.extraction.bert.checkpoint import BertPytorchCheckpoint
 from app.extraction.bert.collation import InvoiceDataCollator
 from app.extraction.bert.datasets import InvoiceDataset
@@ -148,9 +149,9 @@ def test_graph_trains_reloads_evaluates_and_publishes(
     )
     for split in ("train", "val", "test"):
         assert pd.read_csv(directory / f"{split}_rejected.csv").empty
-    saved_model, tokenizer, schema, snapshot = BertPytorchCheckpoint(directory).load(
-        torch.device("cpu")
-    )
+    saved_model, tokenizer, schema, snapshot = BertPytorchCheckpoint(
+        BertArtifacts(directory)
+    ).load(torch.device("cpu"))
     assert snapshot["max_length"] == 16
     assert snapshot["decoder"] == "ocr_word"
     assert (
@@ -175,7 +176,9 @@ def test_graph_trains_reloads_evaluates_and_publishes(
         collate_fn=InvoiceDataCollator(tokenizer),
     )
     repeated = EvaluateTraining(
-        tmp_path / "repeated",
+        BertArtifacts(
+            tmp_path / "repeated", checkpoint_dir=directory, history_path=history_path
+        ),
         torch.device("cpu"),
     ).eval(TrainingResult(directory, history_path), {"test": test_loader})
     assert json.loads(repeated.metrics_path.read_text()) == metrics
@@ -235,5 +238,5 @@ def test_builder_saves_rejections_and_refuses_empty_partitions(tmp_path):
         [{"row_index": 0, "issues": [{"status": "missing"}]}],
     )
     with pytest.raises(ValueError, match="No accepted records in train"):
-        InvoicesBuilder(builder, tmp_path).build(split)
+        InvoicesBuilder(builder, BertArtifacts(tmp_path)).build(split)
     assert len(pd.read_csv(tmp_path / "train_rejected.csv")) == 1

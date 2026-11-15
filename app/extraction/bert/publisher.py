@@ -1,35 +1,21 @@
 from dataclasses import asdict, dataclass
-from pathlib import Path
 
 from clearml import OutputModel, Task
 
+from app.extraction.bert.artifacts import BertArtifacts
 from app.extraction.bert.metrics import EvalResult
 
 
 @dataclass
 class ClearMLPublisher:
-    config: dict
-    history_path: Path
+    artifacts: BertArtifacts
     project_name: str = "ocr"
     task_name: str = "bert-pytorch"
 
-    def run(
-        self,
-        checkpoint_path: Path,
-        test_metrics: EvalResult,
-    ) -> str:
-        checkpoint_dir = checkpoint_path.expanduser().resolve()
-        history_path = self.history_path.expanduser().resolve()
-
-        for path in (
-            checkpoint_dir / "model.pt",
-            checkpoint_dir / "encoder",
-            checkpoint_dir / "tokenizer",
-            checkpoint_dir / "validation.json",
-            history_path,
-        ):
-            if not path.exists():
-                raise FileNotFoundError(f"Missing artifact: {path}")
+    def run(self) -> str:
+        files = self.artifacts.publication_files()
+        config = self.artifacts.load_config()
+        test_metrics = EvalResult(**self.artifacts.load_metrics())
 
         task = Task.init(
             project_name=self.project_name,
@@ -41,32 +27,28 @@ class ClearMLPublisher:
         )
 
         try:
-            task.connect(self.config, name="Training")
+            task.connect(config, name="Training")
 
             model = OutputModel(
                 task=task,
                 name=f"{self.task_name}-best",
                 framework="PyTorch",
-                config_dict=self.config,
+                config_dict=config,
             )
 
             # Upload all checkpoint files together for offline loading.
             model.update_weights_package(
-                weights_path=str(checkpoint_dir),
+                weights_path=str(self.artifacts.checkpoint_dir),
                 target_filename=f"{self.task_name}-best.zip",
                 auto_delete_file=False,
                 async_enable=False,
             )
 
             artifacts = {
-                "history.csv": history_path,
+                **files,
                 "test_metrics": asdict(test_metrics),
-                "config": self.config,
+                "config": config,
             }
-
-            manifest = checkpoint_dir / "split_manifest.json"
-            if manifest.exists():
-                artifacts["split_manifest.json"] = manifest
 
             for name, artifact in artifacts.items():
                 uploaded = task.upload_artifact(

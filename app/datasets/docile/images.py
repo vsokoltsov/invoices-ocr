@@ -5,6 +5,7 @@ import pandas as pd
 import pymupdf
 from tqdm.auto import tqdm
 
+from app.extraction.layoutlm.artifacts import LayoutLMArtifacts
 from app.extraction.layoutlm.converter import AttachmentToImageConverter
 
 
@@ -39,7 +40,9 @@ class DocileImageCache:
         if documents["document_id"].duplicated().any():
             raise ValueError("Document IDs must be unique")
 
-        converter = AttachmentToImageConverter(images_path)
+        converter = AttachmentToImageConverter(
+            LayoutLMArtifacts(output_dir=images_path, images_path=images_path)
+        )
         for row in tqdm(
             documents.itertuples(index=False),
             total=len(documents),

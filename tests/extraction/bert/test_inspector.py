@@ -2,6 +2,7 @@ import pandas as pd
 import torch
 from torch import nn
 
+from app.extraction.bert.artifacts import BertArtifacts
 from app.extraction.bert.inspector import EntityErrorInspector
 from app.extraction.bert.schema import InvoiceLabelSchema
 
@@ -40,7 +41,7 @@ def test_entity_errors_keep_offsets_epoch_and_document_identity(
     inspector = EntityErrorInspector(
         AddressTagger(schema), fast_tokenizer, schema, torch.device("cpu")
     )
-    report, errors = inspector.run([record], tmp_path, epoch=7)
+    report, errors = inspector.run([record], BertArtifacts(tmp_path), epoch=7)
 
     assert report.loc["CLIENT_ADDRESS", "support"] == 1
     assert report.loc["CLIENT_ADDRESS", "recall"] == 0

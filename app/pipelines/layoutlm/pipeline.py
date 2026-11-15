@@ -1,7 +1,5 @@
-import json
 import random
 from dataclasses import asdict, dataclass
-from pathlib import Path
 from typing import cast
 
 import numpy as np
@@ -12,6 +10,7 @@ from transformers import AutoTokenizer, LayoutLMv3ImageProcessor
 from transformers.tokenization_utils_tokenizers import TokenizersBackend
 
 from app.aggregates.layoutlm.params import LayoutLMDevice, LayoutLMTrainingParams
+from app.extraction.layoutlm.artifacts import LayoutLMArtifacts
 from app.extraction.layoutlm.builder import InvoiceBuilder
 from app.extraction.layoutlm.converter import AttachmentToImageConverter
 from app.extraction.layoutlm.model import LayoutLMFieldExtractor
@@ -65,8 +64,8 @@ class LayoutLMTrainingPipeline:
             raise ValueError(
                 "At least six documents are required for an 80/10/10 split"
             )
-        output_dir = Path(self.params.output_dir)
-        output_dir.mkdir(parents=True, exist_ok=True)
+        artifacts = LayoutLMArtifacts.from_params(self.params)
+        artifacts.prepare()
         schema = InvoiceLabelSchema()
         tokenizer = AutoTokenizer.from_pretrained(
             self.params.model_name,
@@ -80,18 +79,11 @@ class LayoutLMTrainingPipeline:
             raise ValueError(
                 "LayoutLM training requires a fast tokenizer with word IDs"
             )
-        tokenizer.save_pretrained(output_dir / "processor")
-        image_processor.save_pretrained(output_dir / "processor")
-        (output_dir / "config.json").write_text(
-            json.dumps(
-                {**asdict(self.params), "field_to_entity": schema.field_to_entity},
-                indent=2,
-            ),
-            encoding="utf-8",
+        artifacts.save_processor(tokenizer, image_processor)
+        artifacts.save_config(
+            {**asdict(self.params), "field_to_entity": schema.field_to_entity}
         )
-        converter = AttachmentToImageConverter(
-            images_path=Path(self.params.images_path)
-        )
+        converter = AttachmentToImageConverter(artifacts)
         model = LayoutLMFieldExtractor(
             model_name=self.params.model_name,
             num_labels=len(schema.labels),
@@ -103,7 +95,7 @@ class LayoutLMTrainingPipeline:
             label2id=schema.label2id,
             min_coverage=self.params.min_word_coverage,
         )
-        build_step = BuildInvoices(builder=invoice_builder, output_dir=output_dir)
+        build_step = BuildInvoices(builder=invoice_builder, artifacts=artifacts)
         dataloaders_step = InvoiceDataLoaders(
             tokenizer=cast(TokenizersBackend, tokenizer),
             image_processor=image_processor,
@@ -121,16 +113,14 @@ class LayoutLMTrainingPipeline:
             learning_rate=self.params.learning_rate,
             weight_decay=self.params.weight_decay,
             warmup_ratio=self.params.warmup_ratio,
-            output_dir=output_dir,
-            checkpoint_path=Path(self.params.checkpoint_path),
+            artifacts=artifacts,
         )
         eval_training_step = EvaluateTraining(
-            output_dir=output_dir,
+            artifacts=artifacts,
             device=device,
         )
         publisher_step = PublishModel(
-            publisher=ClearMLPublisher(),
-            output_dir=output_dir,
+            publisher=ClearMLPublisher(artifacts),
         )
         pipeline = Pipeline(
             [

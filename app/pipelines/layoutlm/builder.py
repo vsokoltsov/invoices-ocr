@@ -1,9 +1,9 @@
 from dataclasses import dataclass
-from pathlib import Path
 from typing import NamedTuple
 
 import pandas as pd
 
+from app.extraction.layoutlm.artifacts import LayoutLMArtifacts
 from app.extraction.layoutlm.builder import InvoiceBuilder
 from app.pipelines.layoutlm.split import DatasetsSplit
 
@@ -16,14 +16,12 @@ class BuildResult(NamedTuple):
 @dataclass
 class BuildInvoices:
     builder: InvoiceBuilder
-    output_dir: Path | None = None
+    artifacts: LayoutLMArtifacts
 
     def build(self, split: DatasetsSplit) -> BuildResult:
         records = {}
         rejected = {}
         manifest = []
-        if self.output_dir is not None:
-            self.output_dir.mkdir(parents=True, exist_ok=True)
         for name in ("train", "val", "test"):
             frame = getattr(split, name)
             pages, rejected_frame = self.builder.build(frame)
@@ -38,16 +36,10 @@ class BuildInvoices:
                 }
                 for document_id in frame["document_id"]
             )
-            if self.output_dir is not None:
-                rejected_frame.to_csv(
-                    self.output_dir / f"{name}_rejected.csv", index=False
-                )
+            self.artifacts.save_rejections(name, rejected_frame)
             if not pages:
                 raise ValueError(f"No accepted pages in {name}")
-        if self.output_dir is not None:
-            pd.DataFrame(manifest).to_csv(
-                self.output_dir / "split_manifest.csv", index=False
-            )
+        self.artifacts.save_manifest(pd.DataFrame(manifest))
         return BuildResult(
             records=DatasetsSplit(**records),
             rejected=DatasetsSplit(**rejected),

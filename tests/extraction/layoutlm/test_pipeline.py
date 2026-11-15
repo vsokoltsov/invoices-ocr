@@ -1,5 +1,6 @@
 import json
 from dataclasses import replace
+from pathlib import Path
 from unittest.mock import Mock
 
 import pandas as pd
@@ -84,7 +85,9 @@ def test_cli_runs_actual_pipefunc_graph_and_writes_reloadable_artifacts(
         ),
     )
 
-    def publish(*, checkpoint_path, output_dir):
+    def publish():
+        checkpoint_path = Path(pipeline_params.checkpoint_path)
+        output_dir = Path(pipeline_params.output_dir)
         assert checkpoint_path.is_file()
         assert (output_dir / "test_metrics.json").is_file()
         assert (output_dir / "history.csv").is_file()

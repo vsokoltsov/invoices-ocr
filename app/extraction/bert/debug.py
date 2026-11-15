@@ -6,6 +6,7 @@ import pandas as pd
 import torch
 
 from app.aggregates.bert.params import BertPytorchDebugParams
+from app.extraction.bert.artifacts import BertArtifacts
 from app.extraction.bert.builder import InvoiceRecordBuilder
 from app.extraction.bert.checkpoint import BertPytorchCheckpoint
 from app.extraction.bert.decoding import OCRWordDecoder
@@ -19,10 +20,15 @@ class BertPytorchDebugPipeline:
     """Compare decoders on validation or held-out test inputs with fixed weights."""
 
     @staticmethod
-    def _test_payload(params, checkpoint_dir, output_dir, schema, validation):
-        path = checkpoint_dir / "test.json"
-        if path.is_file():
-            payload = json.loads(path.read_text(encoding="utf-8"))
+    def _test_payload(
+        params,
+        checkpoint_artifacts: BertArtifacts,
+        reports: BertArtifacts,
+        schema,
+        validation,
+    ):
+        if checkpoint_artifacts.has_records("test"):
+            payload = checkpoint_artifacts.load_records("test")
             if any(
                 payload[key] != validation[key]
                 for key in ("epoch", "max_length", "field_to_entity")
@@ -48,9 +54,8 @@ class BertPytorchDebugPipeline:
             else InvoiceRecordBuilder(schema)
         )
         records, _ = builder.build(frame)
-        manifest = checkpoint_dir / "split_manifest.json"
-        if manifest.is_file():
-            membership = json.loads(manifest.read_text(encoding="utf-8"))
+        if checkpoint_artifacts.has_manifest():
+            membership = checkpoint_artifacts.load_manifest()
             by_id = {record["document_id"]: record for record in records}
             rebuilt_validation = [
                 by_id[document_id]
@@ -80,7 +85,7 @@ class BertPytorchDebugPipeline:
             raise ValueError(
                 "Rebuilt validation split differs from checkpoint; check dataset, seed, and preparation code"
             )
-        return BertPytorchCheckpoint(output_dir).save_records(
+        return BertPytorchCheckpoint(reports).save_records(
             "test",
             test,
             frame,
@@ -91,10 +96,8 @@ class BertPytorchDebugPipeline:
         )
 
     def run(self, params: BertPytorchDebugParams) -> Path:
-        checkpoint_dir = Path(params.checkpoint_dir).expanduser().resolve()
-        output_dir = Path(params.output_dir).expanduser().resolve()
-        if output_dir == checkpoint_dir or checkpoint_dir in output_dir.parents:
-            raise ValueError("Debug output must be outside the checkpoint directory")
+        artifacts = BertArtifacts(Path(params.checkpoint_dir))
+        reports = artifacts.debug_reports(Path(params.output_dir))
         if params.device not in {"auto", "cpu", "cuda", "mps"}:
             raise ValueError("Device must be auto, cpu, cuda, or mps")
         if params.split not in {"validation", "test"}:
@@ -108,19 +111,17 @@ class BertPytorchDebugPipeline:
             if torch.backends.mps.is_available()
             else "cpu"
         )
-        model, tokenizer, schema, payload = BertPytorchCheckpoint(checkpoint_dir).load(
+        model, tokenizer, schema, payload = BertPytorchCheckpoint(artifacts).load(
             device
         )
         if params.split == "test":
-            payload = self._test_payload(
-                params, checkpoint_dir, output_dir, schema, payload
-            )
+            payload = self._test_payload(params, artifacts, reports, schema, payload)
         records = payload["records"]
         if not records or any("text_with_boxes" not in record for record in records):
             raise ValueError(
                 "OCR-word comparison requires saved DocILE validation words or test words"
             )
-        reports = []
+        comparisons = []
         for name, decoder in (
             ("token_argmax", None),
             ("ocr_word", OCRWordDecoder(schema.label2id)),
@@ -132,12 +133,9 @@ class BertPytorchDebugPipeline:
                 device=device,
                 max_length=payload["max_length"],
                 word_decoder=decoder,
-            ).run(records, output_dir / name, epoch=payload["epoch"])
+            ).run(records, reports.decoder_reports(name), epoch=payload["epoch"])
             report.index.name = "entity"
             report["decoder"] = name
             report["split"] = params.split
-            reports.append(report.reset_index())
-        comparison = pd.concat(reports, ignore_index=True)
-        result = output_dir / "decoder_comparison.csv"
-        comparison.to_csv(result, index=False)
-        return result
+            comparisons.append(report.reset_index())
+        return reports.save_comparison(pd.concat(comparisons, ignore_index=True))

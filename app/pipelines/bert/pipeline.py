@@ -1,6 +1,5 @@
 import json
 from dataclasses import asdict, dataclass
-from pathlib import Path
 from typing import cast
 
 import pandas as pd
@@ -10,6 +9,7 @@ from transformers import AutoTokenizer, set_seed
 from transformers.tokenization_utils_tokenizers import TokenizersBackend
 
 from app.aggregates.bert.params import BertPytorchParams
+from app.extraction.bert.artifacts import BertArtifacts
 from app.extraction.bert.builder import InvoiceRecordBuilder
 from app.extraction.bert.collation import InvoiceDataCollator
 from app.extraction.bert.decoding import OCRWordDecoder
@@ -54,19 +54,14 @@ class BertTrainingPipeline:
             if torch.backends.mps.is_available()
             else "cpu"
         )
-        output_dir = Path(params.checkpoint_dir).expanduser().resolve()
-        history_path = (
-            Path(params.result_filename).expanduser().with_suffix(".csv").resolve()
-        )
-        output_dir.mkdir(parents=True, exist_ok=True)
+        artifacts = BertArtifacts.from_params(params)
+        artifacts.prepare()
         builder = (
             ItemRecordBuilder() if params.line_items_only else InvoiceRecordBuilder()
         )
         schema = builder.label_schema
         config = {**asdict(params), "field_to_entity": schema.field_to_entity}
-        (output_dir / "config.json").write_text(
-            json.dumps(config, indent=2), encoding="utf-8"
-        )
+        artifacts.save_config(config)
         tokenizer = AutoTokenizer.from_pretrained(params.model_name, use_fast=True)
         if tokenizer is None or not tokenizer.is_fast:
             raise ValueError("Span alignment requires a fast tokenizer")
@@ -84,7 +79,7 @@ class BertTrainingPipeline:
             if params.diagnostic_dir
             else None
         )
-        build_step = InvoicesBuilder(builder, output_dir)
+        build_step = InvoicesBuilder(builder, artifacts)
         loader_step = InvoiceDataLoader(
             schema=schema,
             tokenizer=cast(TokenizersBackend, tokenizer),
@@ -103,20 +98,15 @@ class BertTrainingPipeline:
             epochs=params.num_epoch,
             learning_rate=params.learning_rate,
             weight_decay=params.weight_decay,
-            checkpoint_path=output_dir,
-            history_path=history_path,
+            artifacts=artifacts,
             max_length_tokens=params.max_length_tokens,
             inspector=inspector,
-            diagnostic_dir=Path(params.diagnostic_dir)
-            if params.diagnostic_dir
-            else None,
             word_decoder=word_decoder,
         )
-        evaluation_step = EvaluateTraining(output_dir, device)
+        evaluation_step = EvaluateTraining(artifacts, device)
         publisher_step = PublishModel(
             ClearMLPublisher(
-                config=config,
-                history_path=history_path,
+                artifacts=artifacts,
                 task_name="bert-items" if params.line_items_only else "bert-body",
             )
         )

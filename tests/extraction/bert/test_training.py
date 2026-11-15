@@ -6,6 +6,7 @@ import torch
 from torch import nn
 from torch.utils.data import DataLoader, Dataset
 
+from app.extraction.bert.artifacts import BertArtifacts
 from app.extraction.bert.collation import InvoiceDataCollator
 from app.extraction.bert.decoding import OCRWordDecoder
 from app.extraction.bert.metrics import EvalResult
@@ -103,17 +104,17 @@ def test_train_restores_best_checkpoint_and_returns_scalar_history(
     inspected_weights = []
     records = [{"text": "Acme", "entities": []}]
 
-    def inspect(validation_records, output_dir, *, epoch):
+    def inspect(validation_records, artifacts, *, epoch):
         assert validation_records is records
         assert epoch == len(inspected_weights) + 1
-        assert output_dir == tmp_path / f"epoch_{epoch:03d}"
+        assert artifacts.output_dir == tmp_path / f"epoch_{epoch:03d}"
         inspected_weights.append(trainer.model.embedding.weight[0, 0].item())
 
     inspector = Mock()
     inspector.run.side_effect = inspect
     trainer.inspector = inspector
     trainer.validation_records = records
-    trainer.diagnostic_dir = tmp_path
+    trainer.artifacts = BertArtifacts(tmp_path, diagnostics_dir=tmp_path)
 
     def train_epoch(epoch):
         with torch.no_grad():

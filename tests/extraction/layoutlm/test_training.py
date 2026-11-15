@@ -8,6 +8,7 @@ from torch import nn
 from torch.optim.lr_scheduler import LambdaLR
 from torch.utils.data import DataLoader, Dataset
 
+from app.extraction.layoutlm.artifacts import LayoutLMArtifacts
 from app.extraction.layoutlm.metrics import EpochMetrics
 from app.extraction.layoutlm.schema import InvoiceLabelSchema
 from app.extraction.layoutlm.training import OCRInvoiceTraining
@@ -70,8 +71,9 @@ def make_trainer(tmp_path, epochs=1):
         scheduler=LambdaLR(optimizer, lr_lambda=lambda _: 1.0),
         schema=schema,
         epochs=epochs,
-        output_dir=tmp_path / "reports",
-        checkpoint_path=tmp_path / "weights" / "best.pt",
+        artifacts=LayoutLMArtifacts(
+            tmp_path / "reports", checkpoint_path=tmp_path / "weights" / "best.pt"
+        ),
     )
 
 
@@ -123,11 +125,11 @@ def test_train_saves_scalar_history_and_restores_best_checkpoint(tmp_path, monke
         lambda epoch: replace(validation, entity_f1=1.0 / epoch),
     )
     history = trainer.train()
-    saved_history = pd.read_csv(trainer.output_dir / "history.csv")
+    saved_history = pd.read_csv(trainer.artifacts.output_dir / "history.csv")
     pd.testing.assert_frame_equal(history, saved_history)
     assert history["validation_entity_f1"].tolist() == [1.0, 0.5]
     assert all(dtype.kind in "if" for dtype in history.dtypes)
-    checkpoint = torch.load(trainer.checkpoint_path, weights_only=True)
+    checkpoint = torch.load(trainer.artifacts.checkpoint_path, weights_only=True)
     assert checkpoint["epoch"] == 1
     assert checkpoint["val_entity_f1"] == 1.0
     assert checkpoint["labels"] == list(trainer.schema.labels)
@@ -146,7 +148,7 @@ def test_nonfinite_loss_fails_before_saving(tmp_path, method):
         trainer.model.embedding.weight.fill_(float("nan"))
     with pytest.raises(FloatingPointError, match="loss is not finite"):
         getattr(trainer, method)(1)
-    assert not trainer.checkpoint_path.exists()
+    assert not trainer.artifacts.checkpoint_path.exists()
 
 
 def test_duplicate_word_evaluation_is_rejected(tmp_path):

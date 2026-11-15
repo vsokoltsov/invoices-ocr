@@ -1,10 +1,9 @@
-import json
 from dataclasses import dataclass
-from pathlib import Path
 
 import torch
 from transformers import AutoConfig, AutoModel, AutoTokenizer
 
+from app.extraction.bert.artifacts import BertArtifacts
 from app.extraction.bert.model import BertFieldExtractor
 from app.extraction.bert.schema import InvoiceLabelSchema
 
@@ -13,7 +12,7 @@ from app.extraction.bert.schema import InvoiceLabelSchema
 class BertPytorchCheckpoint:
     """Store best weights and exact evaluation inputs for offline debugging."""
 
-    directory: Path
+    artifacts: BertArtifacts
 
     def save(
         self,
@@ -28,12 +27,11 @@ class BertPytorchCheckpoint:
         test_records=None,
         decoder="token_argmax",
     ):
-        self.directory.mkdir(parents=True, exist_ok=True)
-        model.bert.config.save_pretrained(self.directory / "encoder")
-        tokenizer.save_pretrained(self.directory / "tokenizer")
-        torch.save(
+        self.artifacts.save_pretrained(self.artifacts.encoder_dir, model.bert.config)
+        self.artifacts.save_pretrained(self.artifacts.tokenizer_dir, tokenizer)
+        self.artifacts.save_weights(
+            self.artifacts.weights_path,
             {key: value.detach().cpu() for key, value in model.state_dict().items()},
-            self.directory / "model.pt",
         )
         self.save_records(
             "validation",
@@ -69,7 +67,6 @@ class BertPytorchCheckpoint:
         """Save evaluation inputs with their original OCR word offsets."""
         if split not in {"validation", "test"}:
             raise ValueError("Split must be validation or test")
-        self.directory.mkdir(parents=True, exist_ok=True)
         words = (
             dict(zip(frame["document_id"], frame["text_with_boxes"], strict=True))
             if "text_with_boxes" in frame
@@ -100,41 +97,26 @@ class BertPytorchCheckpoint:
             "records": saved_records,
             "decoder": decoder,
         }
-        (self.directory / f"{split}.json").write_text(
-            json.dumps(
-                payload, ensure_ascii=False, default=lambda value: value.tolist()
-            ),
-            encoding="utf-8",
-        )
+        self.artifacts.write_json(self.artifacts.records_path(split), payload)
         return payload
 
     def load(self, device: torch.device):
         """Load local artifacts without fetching a pretrained model or dataset."""
-        for name in ("model.pt", "validation.json", "encoder", "tokenizer"):
-            if not (self.directory / name).exists():
-                raise FileNotFoundError(
-                    f"Missing checkpoint artifact: {self.directory / name}"
-                )
-        payload = json.loads(
-            (self.directory / "validation.json").read_text(encoding="utf-8")
-        )
+        self.artifacts.validate_checkpoint()
+        payload = self.artifacts.load_records("validation")
         schema = InvoiceLabelSchema(field_to_entity=payload["field_to_entity"])
         config = AutoConfig.from_pretrained(
-            self.directory / "encoder", local_files_only=True
+            self.artifacts.encoder_dir, local_files_only=True
         )
         model = BertFieldExtractor(
             model_name="",
             num_labels=schema.num_labels,
             encoder=AutoModel.from_config(config),
         )
-        model.load_state_dict(
-            torch.load(
-                self.directory / "model.pt", map_location="cpu", weights_only=True
-            )
-        )
+        model.load_state_dict(self.artifacts.load_weights(self.artifacts.weights_path))
         model.to(device).eval()
         tokenizer = AutoTokenizer.from_pretrained(
-            self.directory / "tokenizer", use_fast=True, local_files_only=True
+            self.artifacts.tokenizer_dir, use_fast=True, local_files_only=True
         )
         if tokenizer is None or not tokenizer.is_fast:
             raise ValueError("Checkpoint requires a fast tokenizer")

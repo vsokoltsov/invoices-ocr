@@ -7,6 +7,7 @@ from torch.utils.data import DataLoader
 from transformers import get_linear_schedule_with_warmup
 
 from app.extraction.enums import IGNORE_INDEX
+from app.extraction.layoutlm.artifacts import LayoutLMArtifacts
 from app.extraction.layoutlm.metrics import EpochMetrics
 from app.extraction.layoutlm.model import LayoutLMFieldExtractor
 from app.extraction.layoutlm.schema import InvoiceLabelSchema
@@ -28,8 +29,7 @@ class LayoutLMTraining:
     learning_rate: float
     weight_decay: float
     warmup_ratio: float
-    output_dir: Path
-    checkpoint_path: Path
+    artifacts: LayoutLMArtifacts
 
     def train(self, dataloaders: dict[str, DataLoader]) -> TrainingResult:
         decay, no_decay = [], []
@@ -63,13 +63,13 @@ class LayoutLMTraining:
             scheduler=scheduler,
             schema=self.schema,
             epochs=self.epochs,
-            output_dir=self.output_dir,
-            checkpoint_path=self.checkpoint_path,
+            artifacts=self.artifacts,
         )
-        trainer.train()
-        # Release device memory before a separate model is loaded for testing.
-        self.model.to("cpu")
+        try:
+            trainer.train()
+        finally:
+            self.model.to("cpu")
         return TrainingResult(
-            checkpoint_path=self.checkpoint_path,
-            history_path=self.output_dir / "history.csv",
+            checkpoint_path=self.artifacts.checkpoint_path,
+            history_path=self.artifacts.history_path,
         )
