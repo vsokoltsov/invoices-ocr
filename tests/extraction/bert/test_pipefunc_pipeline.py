@@ -1,6 +1,6 @@
 import json
 from copy import deepcopy
-from dataclasses import replace
+from dataclasses import asdict, replace
 from unittest.mock import Mock
 
 import pandas as pd
@@ -85,8 +85,9 @@ def make_frame():
 
 
 @pytest.mark.parametrize("line_items_only", [False, True])
+@pytest.mark.parametrize("backend", ["pipefunc", "clearml"])
 def test_graph_trains_reloads_evaluates_and_publishes(
-    params, fast_tokenizer, monkeypatch, tmp_path, line_items_only
+    params, fast_tokenizer, monkeypatch, tmp_path, line_items_only, backend
 ):
     params = replace(params, line_items_only=line_items_only)
     make_frame().to_parquet(params.dataset_path, index=False)
@@ -131,7 +132,22 @@ def test_graph_trains_reloads_evaluates_and_publishes(
     monkeypatch.setattr(
         publisher_module, "OutputModel", Mock(return_value=output_model)
     )
-    result = BertTrainingPipeline(params).run()
+    if backend == "pipefunc":
+        result = BertTrainingPipeline(params).run()
+    else:
+        from app.pipelines.clearml.stages import (
+            evaluate_model,
+            prepare_model,
+            publish_model,
+            train_model,
+        )
+
+        monkeypatch.setattr(publisher_module.Task, "current_task", lambda: task)
+        values = asdict(params)
+        prepared = prepare_model("bert", values)
+        trained = train_model("bert", values, prepared)
+        evaluated = evaluate_model("bert", values, prepared, trained)
+        result = publish_model("bert", values, evaluated)
     assert result == "published-model"
     directory = tmp_path / "checkpoint"
     history_path = tmp_path / "history.csv"
@@ -182,13 +198,17 @@ def test_graph_trains_reloads_evaluates_and_publishes(
         torch.device("cpu"),
     ).eval(TrainingResult(directory, history_path), {"test": test_loader})
     assert json.loads(repeated.metrics_path.read_text()) == metrics
-    task_init.assert_called_once()
+    if backend == "pipefunc":
+        task_init.assert_called_once()
+        task.close.assert_called_once()
+    else:
+        task_init.assert_not_called()
+        task.close.assert_not_called()
     output_model.update_weights_package.assert_called_once()
     assert all(
         not call.kwargs["async_enable"] and not call.kwargs["auto_delete_file"]
         for call in output_model.update_weights_package.call_args_list
     )
-    task.close.assert_called_once()
     task.mark_failed.assert_not_called()
 
 

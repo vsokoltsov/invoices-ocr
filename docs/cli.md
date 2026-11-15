@@ -178,6 +178,115 @@ uv run python -m commands.cli train layoutlm \
 | `--random-seed` | Seed for data splitting and training. |
 | `--device` | `auto`, `cpu`, `cuda`, or `mps`. |
 
+## ClearML training pipelines
+
+The `pipeline` commands create a ClearML pipeline controller with four distinct
+worker tasks per model: **prepare → train → evaluate → publish**. They reuse the
+same preparation, trainers, best-checkpoint selection, and scoring as the local
+PipeFunc commands. Preparation saves its records beside the run outputs in `<output directory>-prepared/`,
+so intermediate datasets are excluded from BERT checkpoint ZIP packages.
+Workers exchange that directory and checkpoint/metric paths; live models and
+PyTorch dataloaders are never passed between tasks.
+
+The controller runs on the machine where you launch the command. By default,
+ClearML runs each stage in a separate local subprocess using the current Python
+environment. There is no agent requirement for this mode. Load the existing
+`CLEARML_API_HOST`, `CLEARML_WEB_HOST`, `CLEARML_FILES_HOST`,
+`CLEARML_API_ACCESS_KEY`, and `CLEARML_API_SECRET_KEY` environment variables with
+`uv run --env-file .env`. A `clearml-init` call is unnecessary when these are set.
+
+### BERT model selection
+
+`--mode model` trains invoice fields, `--mode line-items` trains item fields,
+and `--mode both` trains **two separate models**. Both branches use the same
+source data, row order, and split seed. Their preparation can reject different
+documents for their respective labels. The second branch waits for publication
+of the first, so both do not compete for a single GPU.
+
+```sh
+uv run --env-file .env python -m commands.cli pipeline bert \
+  --mode both \
+  --project ocr \
+  --execution local \
+  --queue default \
+  --dataset-path ./data/raw/docile.parquet \
+  --result-filename ./data/interim/bert/history \
+  --diagnostic-dir ./data/interim/bert/diagnostics \
+  --checkpoint-dir ./data/interim/bert/checkpoints \
+  --model-name google-bert/bert-base-uncased \
+  --batch-size 16 \
+  --num-epoch 5 \
+  --max-length-tokens 512 \
+  --learning-rate 2e-5 \
+  --weight-decay 0.01 \
+  --random-seed 42
+```
+
+In `both` mode, `model/` and `items/` are added below the checkpoint and diagnostic
+directories. History files go into sibling `model/` and `items/` directories.
+For example, `--result-filename ./runs/history` produces
+`./runs/model/history.csv` and `./runs/items/history.csv`. Single-model modes use
+the specified paths directly. `--diagnostic-dir ""` disables diagnostics in either
+mode. The `--line-items-only` switch belongs to the local `train` command; the
+ClearML command uses `--mode` instead.
+
+### LayoutLM
+
+Cache the DocILE images first, then run:
+
+```sh
+uv run --env-file .env python -m commands.cli pipeline layoutlm \
+  --project ocr \
+  --execution local \
+  --queue default \
+  --dataset-path ./data/raw/docile.parquet \
+  --model-name microsoft/layoutlmv3-base \
+  --output-dir ./data/interim/layoutlm_experiment \
+  --checkpoint-path ./data/interim/layoutlm_experiment/best.pt \
+  --images-path ./data/interim/docile_images \
+  --num-epoch 20 \
+  --batch-size 16 \
+  --max-length-tokens 512 \
+  --learning-rate 3e-5 \
+  --weight-decay 0.01 \
+  --warmup-ratio 0.1 \
+  --min-word-coverage 0.5 \
+  --dataloader-num-workers 0 \
+  --random-seed 42 \
+  --device auto
+```
+
+### Orchestration settings
+
+| Option | Environment variable | Meaning |
+| --- | --- | --- |
+| `--project` | `CLEARML_PIPELINE_PROJECT` | ClearML project; default `ocr`. |
+| `--execution` | `CLEARML_PIPELINE_EXECUTION` | `local` subprocesses (default), or `agent` queue execution. |
+| `--queue` | `CLEARML_PIPELINE_QUEUE` | Agent execution queue; default `default`. |
+| `--mode` (BERT) | `CLEARML_PIPELINE_BERT_MODE` | `model` (default), `line-items`, or `both`. |
+
+All model hyperparameters retain their existing `BERTPYTORCH_` or `LAYOUTLM_`
+environment defaults and CLI overrides. BERT's split seed uses `RANDOM_SEED`.
+Each command prints its ClearML pipeline task ID after successful completion.
+A failed stage stops the pipeline and causes the command to fail. Steps are not
+cached across runs, so an existing checkpoint cannot silently replace new training.
+Completed best checkpoints remain available if a later stage fails.
+
+To use agents, pass `--execution agent --queue YOUR_QUEUE`. Start a ClearML agent
+consuming that queue separately. Agents must run the committed project code with
+its dependencies installed. **All workers must see the same absolute paths** for
+prepared data, source PDFs, image caches, and output directories; use one machine
+or shared storage mounted at identical paths. This implementation exchanges paths,
+so it does not transfer the dataset and checkpoints between unrelated worker disks.
+The controller resolves the configured input and output locations to absolute paths.
+Stage environments must also have access to model downloads or a pretrained cache.
+
+The pipeline appears in ClearML's Pipelines view. Open each publish task to find
+its registered model, training history, test metrics, and configuration artifacts.
+The publisher uses that task directly and leaves task completion to ClearML.
+For SDK execution details, see the
+[ClearML PipelineController documentation](https://clear.ml/docs/latest/docs/pipelines/pipelines_sdk_tasks/).
+
 ## Inspect a saved PyTorch checkpoint
 
 Compare token-argmax and OCR-word decoding with fixed model weights. This command

@@ -11,6 +11,7 @@ from app.aggregates.layoutlm.params import LayoutLMTrainingParams
 from app.config import (
     BertPytorchConfig,
     BertPytorchDebugConfig,
+    ClearMLPipelineConfig,
     DocileInvoicesConfig,
     LayoutLMConfig,
     Settings,
@@ -31,7 +32,8 @@ def add_config_options(
     config: BertPytorchConfig
     | BertPytorchDebugConfig
     | LayoutLMConfig
-    | DocileInvoicesConfig,
+    | DocileInvoicesConfig
+    | ClearMLPipelineConfig,
     *,
     exclude: tuple[str, ...] = (),
 ) -> None:
@@ -59,8 +61,16 @@ def add_config_options(
             )
 
 
-def train_bert_pytorch(args: argparse.Namespace, settings: Settings) -> None:
-    params = BertPytorchParams(
+def bert_params(args: argparse.Namespace) -> BertPytorchParams:
+    """Resolve fixed BERT settings from training or pipeline CLI arguments.
+
+    Args:
+        args: Parsed CLI options with model settings.
+
+    Returns:
+        Validated CLI selections as BERT parameters.
+    """
+    return BertPytorchParams(
         dataset_path=args.DATASET_PATH,
         result_filename=args.RESULT_FILENAME,
         random_seed=args.random_seed,
@@ -74,20 +84,60 @@ def train_bert_pytorch(args: argparse.Namespace, settings: Settings) -> None:
         checkpoint_dir=args.CHECKPOINT_DIR,
         line_items_only=args.LINE_ITEMS_ONLY,
     )
-    BertTrainingPipeline(params=params).run()
+
+
+def train_bert_pytorch(args: argparse.Namespace, settings: Settings) -> None:
+    BertTrainingPipeline(params=bert_params(args)).run()
+
+
+def layoutlm_params(args: argparse.Namespace) -> LayoutLMTrainingParams:
+    """Resolve validated LayoutLM settings for either execution backend.
+
+    Args:
+        args: Parsed model settings.
+
+    Returns:
+        LayoutLM training parameters.
+    """
+    config = LayoutLMConfig(
+        _env_file=None,
+        **{name: getattr(args, name) for name in LayoutLMConfig.model_fields},
+    )
+    return LayoutLMTrainingParams(
+        **{name.lower(): getattr(config, name) for name in LayoutLMConfig.model_fields}
+    )
 
 
 def train_layoutlm(args: argparse.Namespace, settings: Settings) -> None:
     from app.pipelines.layoutlm.pipeline import LayoutLMTrainingPipeline
 
-    config = LayoutLMConfig(
-        _env_file=None,
-        **{name: getattr(args, name) for name in LayoutLMConfig.model_fields},
+    LayoutLMTrainingPipeline(params=layoutlm_params(args)).run()
+
+
+def run_clearml_pipeline(args: argparse.Namespace, settings: Settings) -> None:
+    """Run the selected ClearML pipeline with serialized model settings.
+
+    Args:
+        args: Model and orchestration CLI options.
+        settings: Loaded application settings; model values are already resolved.
+    """
+    from app.aggregates.pipeline import ClearMLPipelineParams
+    from app.pipelines.clearml.pipeline import (
+        BertClearMLPipeline,
+        LayoutLMClearMLPipeline,
     )
-    params = LayoutLMTrainingParams(
-        **{name.lower(): getattr(config, name) for name in LayoutLMConfig.model_fields}
+
+    execution = ClearMLPipelineParams(
+        project=args.PROJECT, execution=args.EXECUTION, queue=args.QUEUE
     )
-    LayoutLMTrainingPipeline(params=params).run()
+    factories = {
+        "bert": lambda: BertClearMLPipeline(
+            bert_params(args), execution, mode=args.mode
+        ),
+        "layoutlm": lambda: LayoutLMClearMLPipeline(layoutlm_params(args), execution),
+    }
+    controller = factories[args.model]().run()
+    print(controller.id)
 
 
 def debug_bert_pytorch(args: argparse.Namespace, settings: Settings) -> None:
@@ -102,8 +152,6 @@ def debug_bert_pytorch(args: argparse.Namespace, settings: Settings) -> None:
         )
     )
     print(path)
-
-
 
 
 def download_docile(args: argparse.Namespace, settings: Settings) -> None:
@@ -154,6 +202,36 @@ def build_parser(settings: Settings) -> argparse.ArgumentParser:
     )
     add_config_options(layoutlm, settings.LAYOUTLM)
     layoutlm.set_defaults(handler=train_layoutlm)
+
+    from app.aggregates.pipeline import BertRunMode
+
+    pipeline = commands.add_parser(
+        "pipeline", help="Run training as separate ClearML stage tasks"
+    )
+    pipeline_models = pipeline.add_subparsers(dest="model", required=True)
+    bert_pipeline = pipeline_models.add_parser(
+        "bert", help="Train invoice fields, line items, or both"
+    )
+    bert_pipeline.add_argument("--random-seed", type=int, default=settings.RANDOM_SEED)
+    add_config_options(
+        bert_pipeline, settings.BERT_PYTORCH, exclude=("LINE_ITEMS_ONLY",)
+    )
+    bert_pipeline.set_defaults(LINE_ITEMS_ONLY=False)
+    bert_pipeline.add_argument(
+        "--mode",
+        type=BertRunMode,
+        choices=list(BertRunMode),
+        default=settings.CLEARML_PIPELINE.BERT_MODE,
+    )
+    layout_pipeline = pipeline_models.add_parser(
+        "layoutlm", help="Train LayoutLM through ClearML stage tasks"
+    )
+    add_config_options(layout_pipeline, settings.LAYOUTLM)
+    for model_parser in (bert_pipeline, layout_pipeline):
+        add_config_options(
+            model_parser, settings.CLEARML_PIPELINE, exclude=("BERT_MODE",)
+        )
+        model_parser.set_defaults(handler=run_clearml_pipeline)
 
     debug = commands.add_parser("debug", help="Inspect saved model predictions")
     debug_models = debug.add_subparsers(dest="model", required=True)

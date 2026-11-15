@@ -1,4 +1,5 @@
 import json
+from dataclasses import asdict
 from pathlib import Path
 from unittest.mock import Mock
 
@@ -40,6 +41,7 @@ def pipeline_params(tmp_path):
     )
 
 
+@pytest.mark.parametrize("backend", ["pipefunc", "clearml"])
 def test_cli_runs_actual_pipefunc_graph_and_writes_reloadable_artifacts(
     pipeline_params,
     document_row,
@@ -48,6 +50,7 @@ def test_cli_runs_actual_pipefunc_graph_and_writes_reloadable_artifacts(
     layout_backbone,
     tmp_path,
     monkeypatch,
+    backend,
 ):
     frame = pd.DataFrame(
         [{**vars(document_row), "document_id": f"doc-{index}"} for index in range(10)]
@@ -95,7 +98,18 @@ def test_cli_runs_actual_pipefunc_graph_and_writes_reloadable_artifacts(
     upload = Mock(side_effect=publish)
     monkeypatch.setattr(ClearMLPublisher, "run", upload)
     monkeypatch.setattr(cli, "get_settings", lambda: settings)
-    cli.main(["train", "layoutlm"])
+    if backend == "pipefunc":
+        cli.main(["train", "layoutlm"])
+    else:
+        from app.pipelines.clearml import stages
+
+        monkeypatch.setattr(stages.Task, "current_task", lambda: Mock())
+        monkeypatch.setattr(ClearMLPublisher, "publish_to", lambda self, task: upload())
+        values = asdict(pipeline_params)
+        prepared = stages.prepare_model("layoutlm", values)
+        trained = stages.train_model("layoutlm", values, prepared)
+        evaluated = stages.evaluate_model("layoutlm", values, prepared, trained)
+        assert stages.publish_model("layoutlm", values, evaluated) == "clearml-model-id"
     upload.assert_called_once()
 
     output = tmp_path / "results"

@@ -4,6 +4,7 @@ from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.aggregates.layoutlm.params import LayoutLMDevice
+from app.aggregates.pipeline import BertRunMode, PipelineExecution
 from app.datasets.docile.enums import DocileSplit
 
 
@@ -44,8 +45,6 @@ class DocileInvoicesConfig(BaseSettings):
         ge=0,
         description="Minimum accepted archive size in bytes.",
     )
-
-
 
 
 class BertPytorchConfig(BaseSettings):
@@ -202,6 +201,27 @@ class BertPytorchDebugConfig(BaseSettings):
     )
 
 
+class ClearMLPipelineConfig(BaseSettings):
+    """Configure pipeline orchestration separately from model hyperparameters."""
+
+    model_config = SettingsConfigDict(
+        env_prefix="CLEARML_PIPELINE_", env_file=".env", extra="ignore"
+    )
+
+    PROJECT: str = Field(
+        default="ocr", description="ClearML project for pipeline runs."
+    )
+    EXECUTION: PipelineExecution = Field(
+        default=PipelineExecution.LOCAL,
+        description="Run stages as local subprocesses or through a ClearML agent queue.",
+    )
+    QUEUE: str = Field(default="default", description="ClearML agent execution queue.")
+    BERT_MODE: BertRunMode = Field(
+        default=BertRunMode.MODEL,
+        description="BERT models to train: model, line-items, or both.",
+    )
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -215,6 +235,9 @@ class Settings(BaseSettings):
         default_factory=BertPytorchDebugConfig
     )
     DOCILE: DocileInvoicesConfig = Field(default_factory=DocileInvoicesConfig)
+    CLEARML_PIPELINE: ClearMLPipelineConfig = Field(
+        default_factory=ClearMLPipelineConfig
+    )
     RANDOM_SEED: int = 42
     DOCILE_TOKEN: str = Field(default="", repr=False)
 
