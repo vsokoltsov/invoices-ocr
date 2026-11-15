@@ -87,9 +87,8 @@ manifest. New training runs save test inputs directly.
 
 ## Configuration
 
-This command requires a checkpoint with DocILE OCR words. Kaggle text-only data
-cannot provide that alignment. Existing error CSVs cannot reconstruct model
-weights. Checkpoints from training before checkpoint saving must be recreated.
+This command requires a checkpoint with DocILE OCR words. Existing error CSVs
+cannot reconstruct model weights. Checkpoints from training before checkpoint saving must be recreated.
 
 Configuration defaults are in `BertPytorchDebugConfig`. Environment variables:
 

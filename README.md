@@ -11,9 +11,8 @@ customer details, and amounts. These values can then be assembled into an
 invoice JSON document.
 
 The repository focuses on dataset preparation, training, and evaluation for
-invoice field extraction with BERT and LayoutLMv3. It includes Kaggle and DocILE
-dataset tools, cached PDF page rendering, model diagnostics, and ClearML artifact
-publication. Training can use OCR text and boxes already supplied by a dataset;
+invoice field extraction with BERT and LayoutLMv3. It uses the DocILE dataset for document preparation, cached PDF page rendering,
+model diagnostics, and ClearML artifact publication. Training can use OCR text and boxes already supplied by a dataset;
 the diagram shows the overall document-processing workflow.
 
 ## CLI
@@ -23,7 +22,6 @@ and configuring `.env` from [`.env.sample`](.env.sample).
 
 | Command | Purpose |
 | --- | --- |
-| `uv run python -m commands.cli datasets download kaggle-invoices` | Download and prepare the Kaggle invoice dataset. |
 | `uv run python -m commands.cli datasets download docile` | Download and prepare annotated DocILE documents. |
 | `uv run python -m commands.cli datasets cache-images docile` | Cache PDF page images for LayoutLM training. |
 | `uv run python -m commands.cli train bert-pytorch` | Train and evaluate BERT with the PyTorch training loop. |

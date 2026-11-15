@@ -18,25 +18,6 @@ uv run python -m commands.cli --help
 uv run python -m commands.cli datasets download docile --help
 ```
 
-## Download and prepare Kaggle invoices
-
-Download or reuse the archive, extract the dataset, combine its CSV batches,
-and write a prepared CSV. The command prints the absolute output path.
-Defaults use the `KAGGLE_INVOICES_` environment prefix.
-
-```sh
-uv run python -m commands.cli datasets download kaggle-invoices \
-  --destination-path ./data/raw/kaggle-invoices \
-  --archive-path ./data/raw/invoices-ocr.zip \
-  --output-path ./data/raw/kaggle-invoices.csv
-```
-
-| Option | Meaning |
-| --- | --- |
-| `--destination-path` | Directory for extracted files. |
-| `--archive-path` | Downloaded ZIP path; an existing archive is reused. |
-| `--output-path` | Prepared CSV path. |
-
 ## Download and prepare DocILE
 
 Download annotated documents or reuse cached data, then prepare the selected
