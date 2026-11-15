@@ -27,7 +27,6 @@ and configuring `.env` from [`.env.sample`](.env.sample).
 | `uv run python -m commands.cli datasets download docile` | Download and prepare annotated DocILE documents. |
 | `uv run python -m commands.cli datasets cache-images docile` | Cache PDF page images for LayoutLM training. |
 | `uv run python -m commands.cli train bert-pytorch` | Train and evaluate BERT with the PyTorch training loop. |
-| `uv run python -m commands.cli train bert-transformers` | Run the BERT pipeline built around Transformers Trainer. |
 | `uv run python -m commands.cli train layoutlm` | Train LayoutLMv3, evaluate its best checkpoint, and publish artifacts to ClearML. |
 | `uv run python -m commands.cli debug bert-pytorch` | Compare token and OCR-word decoding for a saved checkpoint. |
 
