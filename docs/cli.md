@@ -93,14 +93,17 @@ download data, run OCR, or load a model.
 
 ## Train BERT with plain PyTorch
 
-Train from an existing prepared Kaggle CSV or DocILE CSV/Parquet. The command
-saves training history, the best checkpoint, and optional validation diagnostics.
-It does not download data. Defaults use the `BERTPYTORCH_` environment prefix,
-except `--dataset-name` uses `DATASET_NAME` and `--random-seed` uses `RANDOM_SEED`.
+Train one model from prepared DocILE Parquet through the PipeFunc pipeline
+in `app/pipelines/bert/pipeline.py`. The pipeline splits documents randomly into
+80/10/10 partitions, prepares records, trains, reloads the best checkpoint,
+evaluates the test partition, and publishes to ClearML. It saves training history,
+checkpoint files, test metrics, split membership, and optional validation diagnostics.
+Load ClearML credentials with `uv run --env-file .env` when using a `.env` file.
+Defaults use the `BERTPYTORCH_` environment prefix, except `--random-seed` uses
+`RANDOM_SEED`.
 
 ```sh
 uv run python -m commands.cli train bert-pytorch \
-  --dataset-name docile \
   --dataset-path ./data/raw/docile.parquet \
   --result-filename ./data/interim/docile-bert \
   --diagnostic-dir ./data/interim/bert_diagnostics \
@@ -112,31 +115,26 @@ uv run python -m commands.cli train bert-pytorch \
   --learning-rate 2e-5 \
   --weight-decay 0.01 \
   --random-seed 42 \
-  --no-body-only
+  --no-line-items-only
 ```
 
 | Option | Meaning |
 | --- | --- |
-| `--dataset-name` | `kaggle_invoices` or `docile`; selects dataset loading and label preparation. |
 | `--dataset-path` | Existing prepared dataset file. |
 | `--result-filename` | Training-history path; its extension is replaced with `.csv`. |
 | `--diagnostic-dir` | Per-epoch diagnostic output directory; `""` disables diagnostics. |
 | `--checkpoint-dir` | Directory for best weights, tokenizer, label schema, and saved evaluation inputs. |
 | `--model-name` | Hugging Face checkpoint used to initialize the model. |
-| `--batch-size` | Documents per dataset-encoding batch. |
+| `--batch-size` | Token windows per training or evaluation batch. |
 | `--num-epoch` | Number of training epochs. |
 | `--max-length-tokens` | Maximum tokens per document window. |
 | `--learning-rate` | Optimizer learning rate. |
 | `--weight-decay` | Optimizer weight-decay coefficient. |
 | `--random-seed` | Seed for reproducible data splits and training. |
-| `--body-only` / `--no-body-only` | Train invoice fields without the line-item model, or disable this restriction (default). |
-| `--line-items-only` / `--no-line-items-only` | Train only DocILE item descriptions, quantities, gross unit prices, and gross amounts, or disable this restriction (default). Requires `--dataset-name docile` when enabled. |
+| `--line-items-only` / `--no-line-items-only` | Train only DocILE item descriptions, quantities, gross unit prices, and gross amounts, or train invoice fields (default). |
 
-Replace the example's `--no-body-only` with `--body-only`, `--line-items-only`,
-or `--no-line-items-only` to select another mode. Argparse places both options,
-including their `--no-` forms, in a mutually exclusive group, so pass at most one
-of these four flags. Both settings default to false. To use Kaggle data,
-set `--dataset-name kaggle_invoices` and its prepared CSV path.
+Use `--line-items-only` to train an item model in a separate run. The default
+trains invoice fields using the shared field-to-entity mapping.
 
 ## Train LayoutLMv3
 
@@ -227,13 +225,10 @@ uv run python -m commands.cli debug bert-pytorch \
 
 ## PyTorch training outputs and diagnostics
 
-The PyTorch training pipeline reads a prepared dataset and checks required
-columns before loading the model. Kaggle CSVs require `ocred_text` and `json_data`.
-The pipeline builds validated span records, restores the checkpoint with the best
-validation entity F1, and evaluates it on the test split. Kaggle data uses an
-80/10/10 document split; DocILE splitting is described under
-[DocILE labels and splits](#docile-labels-and-splits). Training does not download
-or extract datasets.
+The PyTorch pipeline reads prepared DocILE documents, builds validated span
+records, restores the best validation-entity-F1 checkpoint, and evaluates the test
+partition. It uses the same seeded 80/10/10 document split as LayoutLM. Training
+does not download or extract datasets.
 
 Training history uses `--result-filename`, with `.csv` enforced by the pipeline.
 The example writes `./data/interim/docile-bert.csv`. Supplying a different
@@ -263,27 +258,16 @@ Parquet preserves nested OCR words; CSV stores those words as JSON strings too.
 
 ## DocILE labels and splits
 
-`--dataset-name` accepts `kaggle_invoices` or `docile`, defaults to `DATASET_NAME`,
-and becomes `BertPytorchParams.dataset_type`. DocILE training requires
-`document_id`, `ocr_text`, `text_with_boxes`, and `json_data` columns. Existing
-Parquet files with nested annotation structures also work. DocILE uses boxes to
-assign word labels, resolves names inside addresses, and rejects documents with
-missing spans, unresolved overlaps, or invalid offsets. The body model selects
-the nine Kaggle fields plus due date, payment terms, and `AMOUNT_DUE`
-(`other_fields.amount_due`). Line-item training uses separate labels. `AMOUNT_DUE` remains
-separate from `TOTAL` (`subtotal.total`).
-Where both annotations select the same OCR word, `TOTAL` takes priority.
-`AMOUNT_DUE` is supervised at distinct locations; an occurrence fully covered by
-`TOTAL` is intentionally suppressed rather than treated as missing supervision.
-Accepted records store `amount_due_suppressed_words`, also summed in the
-record-preparation log. Other unresolved overlaps still cause rejection.
+BERT training requires `document_id`, `ocr_text`, `text_with_boxes`, and
+`json_data` columns. It assigns word labels using annotation boxes, resolves
+names inside addresses, and rejects documents with missing spans, unresolved
+overlaps, or invalid offsets. Invoice-field training uses the shared
+`FIELD_TO_ENTITY` mapping. Item training uses a separate item-field mapping.
 
-When official split metadata is present, 10% of accepted official training
-documents are used for tuning; official validation documents are used only for
-the final evaluation. This final evaluation is not the official hidden test set.
-Without split metadata, the pipeline uses the seeded 80/10/10 document split.
-Preparing only one official split is useful for inspection, but training needs
-both train and validation documents. Training never downloads a dataset.
+Documents are split randomly into approximately 80/10/10 partitions before
+record preparation. The source dataset's `split` column does not affect these
+partitions. `split_manifest.json` records document membership for reproducibility.
+Use the same prepared data, row order, and seed when comparing runs with LayoutLM.
 
 ## Annotation corrections
 

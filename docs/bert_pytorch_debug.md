@@ -1,12 +1,14 @@
 # Compare BERT decoders
 
+![](./assets/bert-pytorch-debug.png)
+
+## Save a checkpoint and choose inputs
+
 Train once and save the best validation-F1 weights with their validation inputs:
 
 ```bash
-uv run python -m commands.cli train bert-pytorch \
-  --dataset-name docile \
+uv run --env-file .env python -m commands.cli train bert-pytorch \
   --dataset-path docile_df.parquet \
-  --body-only \
   --num-epoch 20 \
   --checkpoint-dir data/interim/docile_checkpoint \
   --result-filename data/interim/docile_training \
@@ -14,9 +16,8 @@ uv run python -m commands.cli train bert-pytorch \
 ```
 
 The checkpoint is written when training finishes and restores the best weights.
-DocILE selects those weights using OCR-word entity F1. Without `--body-only` or
-`--line-items-only`, training saves separate checkpoints under `body/` and
-`items/`; point the debug command at one of these subdirectories.
+Weights are selected using OCR-word entity F1. Each run trains one model;
+use `--line-items-only` for a separate item-field experiment.
 It includes the encoder configuration, model weights, tokenizer, ordered field
 schema, selected epoch, window length, validation text, gold spans, ignored
 regions, and OCR word offsets. It also saves held-out test records in `test.json`.
@@ -34,6 +35,36 @@ uv run python -m commands.cli debug bert-pytorch \
 
 Use `--split test` to evaluate both decoders on saved test records. The default
 is `--split validation`. Use separate output directories for the two splits.
+
+![Save the best checkpoint, select validation or test inputs, and run the fixed BERT model.](assets/bert-pytorch-debug-01-checkpoint-inputs.png)
+
+## Compare decoding methods
+
+Token argmax selects the highest-scoring BIO label for each subtoken.
+
+The word decoder sums B/I probabilities per entity type, averages these type
+probabilities over each OCR word, and assigns one type to that word. It retains
+an explicit B at a word start and uses I for the remaining subtokens. It does not
+pool words that cross a token-window boundary. Separate OCR words can still have
+separate entities.
+
+![Compare independent token argmax with OCR-word probability pooling using the same example word.](assets/bert-pytorch-debug-02-decoding.png)
+
+## Evaluate predictions
+
+Gold labels are used only for evaluation, with the same -100
+mask and window-level scoring as training diagnostics.
+
+![Compare both decoders against saved gold spans using the same supervision mask and window-level entity scoring.](assets/bert-pytorch-debug-03-evaluation.png)
+
+## Inspect reports
+
+Use `cpu`, `cuda`, or `mps` to select a device explicitly. The command prints the
+absolute path to `decoder_comparison.csv`. It also saves `per_entity.csv`,
+`entity_errors.csv`, `false_positive.csv`, and `false_negative.csv` under each of
+`token_argmax/` and `ocr_word/`. Each output records the selected checkpoint epoch.
+
+![Read the comparison CSV and each decoder's error reports; rebuild missing test inputs from the original Parquet and seed when needed.](assets/bert-pytorch-debug-04-reports.png)
 
 For a checkpoint without `test.json`, supply the original prepared dataset and
 training split seed:
@@ -54,17 +85,7 @@ snapshot is then saved in the debug output directory. Use the original dataset,
 seed, and preparation logic; this check cannot replace a complete saved split
 manifest. New training runs save test inputs directly.
 
-Use `cpu`, `cuda`, or `mps` to select a device explicitly. The command prints the
-absolute path to `decoder_comparison.csv`. It also saves `per_entity.csv`,
-`entity_errors.csv`, `false_positive.csv`, and `false_negative.csv` under each of
-`token_argmax/` and `ocr_word/`. Each output records the selected checkpoint epoch.
-
-The word decoder sums B/I probabilities per entity type, averages these type
-probabilities over each OCR word, and assigns one type to that word. It retains
-an explicit B at a word start and uses I for the remaining subtokens. It does not
-pool words that cross a token-window boundary. Separate OCR words can still have
-separate entities. Gold labels are used only for evaluation, with the same -100
-mask and window-level scoring as training diagnostics.
+## Configuration
 
 This command requires a checkpoint with DocILE OCR words. Kaggle text-only data
 cannot provide that alignment. Existing error CSVs cannot reconstruct model
