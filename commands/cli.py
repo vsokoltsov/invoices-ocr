@@ -12,16 +12,13 @@ from app.config import (
     BertPytorchConfig,
     BertPytorchDebugConfig,
     DocileInvoicesConfig,
-    KaggleInvoicesConfig,
     LayoutLMConfig,
     Settings,
     get_settings,
 )
 from app.datasets.docile.downloader import DocileDatasetDownloader
 from app.datasets.docile.preparation import DocileInvoicesPreparation
-from app.datasets.kaggle_invoices.downloader import InvoiceDatasetDownloader
-from app.datasets.kaggle_invoices.preparation import KaggleInvoicesPreparation
-from app.extraction.bert.pytorch.debug import BertPytorchDebugPipeline
+from app.extraction.bert.debug import BertPytorchDebugPipeline
 from app.pipelines.bert.pipeline import BertTrainingPipeline
 
 
@@ -33,7 +30,6 @@ def add_config_options(
     parser: argparse.ArgumentParser | argparse._MutuallyExclusiveGroup,
     config: BertPytorchConfig
     | BertPytorchDebugConfig
-    | KaggleInvoicesConfig
     | LayoutLMConfig
     | DocileInvoicesConfig,
     *,
@@ -108,16 +104,6 @@ def debug_bert_pytorch(args: argparse.Namespace, settings: Settings) -> None:
     print(path)
 
 
-def download_kaggle_invoices(args: argparse.Namespace, settings: Settings) -> None:
-    downloader = InvoiceDatasetDownloader(
-        destination=args.DESTINATION_PATH,
-        archive_path=args.ARCHIVE_PATH,
-    )
-    path = KaggleInvoicesPreparation(
-        downloader=downloader,
-        output_path=Path(args.OUTPUT_PATH),
-    ).run()
-    print(path)
 
 
 def download_docile(args: argparse.Namespace, settings: Settings) -> None:
@@ -185,14 +171,6 @@ def build_parser(settings: Settings) -> argparse.ArgumentParser:
         "download", help="Download a dataset and save a prepared dataframe"
     )
     dataset_names = download.add_subparsers(dest="dataset", required=True)
-    kaggle = dataset_names.add_parser(
-        "kaggle-invoices",
-        help="Download and prepare the Kaggle invoices dataset",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-    )
-    add_config_options(kaggle, settings.KAGGLE_INVOICES)
-    kaggle.set_defaults(handler=download_kaggle_invoices)
-
     docile = dataset_names.add_parser(
         "docile",
         help="Download and prepare annotated DocILE invoices",

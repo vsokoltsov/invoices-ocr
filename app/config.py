@@ -46,26 +46,6 @@ class DocileInvoicesConfig(BaseSettings):
     )
 
 
-class KaggleInvoicesConfig(BaseSettings):
-    model_config = SettingsConfigDict(
-        env_prefix="KAGGLE_INVOICES_",
-        env_file=".env",
-        env_file_encoding="utf-8",
-        extra="ignore",
-    )
-
-    DESTINATION_PATH: str = Field(
-        default="./data/raw/kaggle-invoices",
-        description="Directory for the extracted dataset archive.",
-    )
-    ARCHIVE_PATH: str = Field(
-        default="./data/raw/invoices-ocr.zip",
-        description="Dataset archive path; an existing archive is reused.",
-    )
-    OUTPUT_PATH: str = Field(
-        default="./data/raw/kaggle-invoices.csv",
-        description="Path for the prepared dataset CSV.",
-    )
 
 
 class BertPytorchConfig(BaseSettings):
@@ -234,7 +214,6 @@ class Settings(BaseSettings):
     BERT_PYTORCH_DEBUG: BertPytorchDebugConfig = Field(
         default_factory=BertPytorchDebugConfig
     )
-    KAGGLE_INVOICES: KaggleInvoicesConfig = Field(default_factory=KaggleInvoicesConfig)
     DOCILE: DocileInvoicesConfig = Field(default_factory=DocileInvoicesConfig)
     RANDOM_SEED: int = 42
     DOCILE_TOKEN: str = Field(default="", repr=False)
