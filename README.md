@@ -26,6 +26,8 @@ and configuring `.env` from [`.env.sample`](.env.sample).
 | `uv run python -m commands.cli datasets cache-images docile` | Cache PDF page images for LayoutLM training. |
 | `uv run python -m commands.cli train bert-pytorch` | Train and evaluate BERT with the PyTorch training loop. |
 | `uv run python -m commands.cli train layoutlm` | Train LayoutLMv3, evaluate its best checkpoint, and publish artifacts to ClearML. |
+| `uv run --env-file .env python -m commands.cli pipeline bert` | Run BERT preparation, training, evaluation, and publication as separate ClearML tasks. |
+| `uv run --env-file .env python -m commands.cli pipeline layoutlm` | Run LayoutLM preparation, training, evaluation, and publication as separate ClearML tasks. |
 | `uv run python -m commands.cli debug bert-pytorch` | Compare token and OCR-word decoding for a saved checkpoint. |
 
 See the [full CLI reference](https://github.com/vsokoltsov/invoices-ocr/blob/main/docs/cli.md)
