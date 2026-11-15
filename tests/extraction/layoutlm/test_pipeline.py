@@ -8,11 +8,11 @@ import torch
 
 from app.aggregates.layoutlm.params import LayoutLMDevice, LayoutLMTrainingParams
 from app.config import LayoutLMConfig, Settings
+from app.datasets.split import DatasetsSplit
 from app.extraction.layoutlm.model import LayoutLMFieldExtractor
 from app.extraction.layoutlm.publisher import ClearMLPublisher
 from app.pipelines.layoutlm import pipeline as pipeline_module
 from app.pipelines.layoutlm.pipeline import LayoutLMTrainingPipeline
-from app.pipelines.split import DatasetsSplit
 from commands import cli
 
 

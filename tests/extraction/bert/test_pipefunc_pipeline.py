@@ -10,6 +10,7 @@ from torch.utils.data import DataLoader
 from transformers import BertConfig, BertModel
 
 from app.aggregates.bert.params import BertPytorchParams
+from app.datasets.split import DatasetsSplit
 from app.extraction import publisher as publisher_module
 from app.extraction.bert import model as model_module
 from app.extraction.bert.artifacts import BertArtifacts
@@ -21,7 +22,6 @@ from app.pipelines.bert import pipeline as pipeline_module
 from app.pipelines.bert.builder import InvoicesBuilder
 from app.pipelines.bert.evaluate import EvaluateTraining
 from app.pipelines.bert.pipeline import BertTrainingPipeline
-from app.pipelines.split import DatasetsSplit
 
 
 @pytest.fixture

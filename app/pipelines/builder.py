@@ -3,8 +3,8 @@ from typing import ClassVar, NamedTuple
 
 import pandas as pd
 
+from app.datasets.split import DatasetsSplit
 from app.extraction.artifacts import RunArtifacts
-from app.pipelines.split import DatasetsSplit
 
 
 class BuildResult(NamedTuple):

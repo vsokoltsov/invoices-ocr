@@ -6,13 +6,13 @@ import pytest
 import torch
 from torch.utils.data import TensorDataset
 
+from app.datasets.split import DatasetsSplit
 from app.extraction.layoutlm.artifacts import LayoutLMArtifacts
 from app.extraction.metrics import TrainResult
 from app.extraction.results import TrainingResult
 from app.pipelines.builder import BuildResult
 from app.pipelines.dataloader import DataLoaders
 from app.pipelines.evaluate import EvaluateCheckpoint
-from app.pipelines.split import DatasetsSplit
 from app.pipelines.training import TrainingRun
 
 

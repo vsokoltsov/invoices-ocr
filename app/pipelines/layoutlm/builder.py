@@ -2,10 +2,10 @@ from dataclasses import dataclass
 
 import pandas as pd
 
+from app.datasets.split import DatasetsSplit
 from app.extraction.layoutlm.artifacts import LayoutLMArtifacts
 from app.extraction.layoutlm.builder import InvoiceBuilder
 from app.pipelines.builder import BuildPartitions
-from app.pipelines.split import DatasetsSplit
 
 
 @dataclass

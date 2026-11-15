@@ -6,13 +6,13 @@ import pandas as pd
 import torch
 
 from app.aggregates.bert.params import BertPytorchDebugParams
+from app.datasets.split import DatasetsSplit
 from app.extraction.bert.artifacts import BertArtifacts
 from app.extraction.bert.builder import InvoiceRecordBuilder
 from app.extraction.bert.checkpoint import BertCheckpointLoader, BertEvaluationRecords
 from app.extraction.bert.decoding import OCRWordDecoder
 from app.extraction.bert.inspector import EntityErrorInspector
 from app.extraction.bert.item_builder import ItemRecordBuilder
-from app.pipelines.bert.split import DatasetsSplit
 
 
 @dataclass

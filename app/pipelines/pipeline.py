@@ -5,9 +5,9 @@ import pandas as pd
 from pipefunc import PipeFunc, Pipeline
 from torch.utils.data import DataLoader
 
+from app.datasets.split import DatasetsSplit
 from app.extraction.results import EvaluationResult, TrainingResult
 from app.pipelines.builder import BuildResult
-from app.pipelines.split import DatasetsSplit
 
 
 @dataclass

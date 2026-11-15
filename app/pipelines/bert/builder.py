@@ -2,10 +2,10 @@ from dataclasses import dataclass
 
 import pandas as pd
 
+from app.datasets.split import DatasetsSplit
 from app.extraction.bert.artifacts import BertArtifacts
 from app.extraction.bert.builder import InvoiceRecordBuilder
 from app.pipelines.builder import BuildPartitions
-from app.pipelines.split import DatasetsSplit
 
 
 @dataclass

@@ -6,6 +6,7 @@ from torch import nn
 from torch.utils.data import DataLoader
 from transformers.tokenization_utils_tokenizers import TokenizersBackend
 
+from app.datasets.split import DatasetsSplit
 from app.extraction.bert.artifacts import BertArtifacts
 from app.extraction.bert.checkpoint import BertEvaluationRecords, BertPytorchCheckpoint
 from app.extraction.bert.decoding import OCRWordDecoder
@@ -17,7 +18,6 @@ from app.extraction.results import TrainingResult
 from app.extraction.schema import InvoiceLabelSchema
 from app.extraction.training import BestCheckpointWriter
 from app.pipelines.builder import BuildResult
-from app.pipelines.split import DatasetsSplit
 from app.pipelines.training import TrainingRun
 
 

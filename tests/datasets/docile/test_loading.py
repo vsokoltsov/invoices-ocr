@@ -12,8 +12,8 @@ from app.datasets.docile.enums import DocileSplit
 from app.datasets.docile.loader import DocileDatasetLoader
 from app.datasets.docile.order import OCRReadingOrder
 from app.datasets.docile.preparation import DocileInvoicesPreparation
+from app.datasets.split import DatasetsSplit
 from app.extraction.bert.builder import InvoiceRecordBuilder
-from app.pipelines.split import DatasetsSplit
 
 
 def test_loader_preserves_boxes_items_offsets_and_provenance(docile_archive):
