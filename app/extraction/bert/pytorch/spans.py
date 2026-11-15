@@ -11,7 +11,7 @@ from app.extraction.bert.pytorch.annotations import (
     OCRSpanEntity,
     OCRSpanResult,
 )
-from app.extraction.bert.pytorch.enums import InvoiceField
+from app.extraction.enums import InvoiceField
 
 ACCOUNT_NUMBER_MIN_SCORE = 80
 

@@ -2,8 +2,8 @@ from dataclasses import dataclass, field
 
 from app.extraction.bert.pytorch.docile.builder import DocileRecordBuilder
 from app.extraction.bert.pytorch.docile.spans import assign_candidate_labels
-from app.extraction.bert.pytorch.enums import ITEM_FIELD_TO_ENTITY
 from app.extraction.bert.pytorch.schema import InvoiceLabelSchema
+from app.extraction.enums import ITEM_FIELD_TO_ENTITY
 
 
 @dataclass

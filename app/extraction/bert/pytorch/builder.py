@@ -8,8 +8,8 @@ from dataclasses import asdict, dataclass
 import pandas as pd
 from rapidfuzz import fuzz
 
-from app.extraction.bert.pytorch.enums import FIELD_TO_ENTITY
 from app.extraction.bert.pytorch.spans import Normalizer, NumericField, OCRSpanMatcher
+from app.extraction.enums import FIELD_TO_ENTITY
 
 ACCOUNT_NUMBER_MIN_SCORE = 80
 MIN_NUMBER_SCORE = 80

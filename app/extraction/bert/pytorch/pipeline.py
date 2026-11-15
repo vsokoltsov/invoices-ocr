@@ -20,7 +20,6 @@ from app.extraction.bert.pytorch.datasets import InvoiceDataset
 from app.extraction.bert.pytorch.decoding import OCRWordDecoder
 from app.extraction.bert.pytorch.docile.builder import DocileRecordBuilder
 from app.extraction.bert.pytorch.docile.item_builder import DocileItemRecordBuilder
-from app.extraction.bert.pytorch.enums import InvoiceBIOLabel, InvoiceField
 from app.extraction.bert.pytorch.inspector import EntityErrorInspector
 from app.extraction.bert.pytorch.model import BertFieldExtractor
 from app.extraction.bert.pytorch.schema import InvoiceLabelSchema
@@ -31,6 +30,7 @@ from app.extraction.bert.pytorch.spans import (
     OCRSummarySpan,
 )
 from app.extraction.bert.pytorch.training import OCRInvoiceTraining
+from app.extraction.enums import InvoiceBIOLabel, InvoiceField
 
 logger = structlog.get_logger()
 

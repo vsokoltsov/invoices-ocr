@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 
-from app.extraction.bert.pytorch.enums import FIELD_TO_ENTITY
+from app.extraction.enums import FIELD_TO_ENTITY
 
 
 @dataclass(frozen=True)

@@ -3,7 +3,7 @@ from collections.abc import Collection
 from typing import NotRequired, TypedDict
 
 from app.extraction.bert.pytorch.docile.item_annotations import DocileItemAnnotations
-from app.extraction.bert.pytorch.enums import InvoiceField
+from app.extraction.enums import InvoiceField
 
 
 class CandidateLabel(TypedDict):
