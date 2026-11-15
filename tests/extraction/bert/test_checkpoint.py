@@ -7,10 +7,14 @@ from transformers import BertConfig, BertModel
 
 from app.aggregates.bert.params import BertPytorchDebugParams
 from app.extraction.bert.artifacts import BertArtifacts
-from app.extraction.bert.checkpoint import BertPytorchCheckpoint
+from app.extraction.bert.checkpoint import (
+    BertCheckpointLoader,
+    BertEvaluationRecords,
+    BertPytorchCheckpoint,
+)
 from app.extraction.bert.debug import BertPytorchDebugPipeline
 from app.extraction.bert.model import BertFieldExtractor
-from app.extraction.bert.schema import InvoiceLabelSchema
+from app.extraction.schema import InvoiceLabelSchema
 
 
 def test_checkpoint_reloads_weights_tokenizer_and_validation_without_network(
@@ -49,17 +53,22 @@ def test_checkpoint_reloads_weights_tokenizer_and_validation_without_network(
         {"start": 0, "end": 4, "text": "Acme"},
         {"start": 5, "end": 16, "text": "Corporation"},
     ]
-    checkpoint = BertPytorchCheckpoint(BertArtifacts(tmp_path / "checkpoint"))
-    checkpoint.save(
-        model,
-        fast_tokenizer,
-        schema,
-        records,
-        pd.DataFrame([{"document_id": "doc", "text_with_boxes": words}]),
-        epoch=19,
-        max_length=32,
+    checkpoint = BertPytorchCheckpoint(
+        artifacts=BertArtifacts(tmp_path / "checkpoint"),
+        encoder_config=model.bert.config,
+        tokenizer=fast_tokenizer,
+        evaluation_records=BertEvaluationRecords(
+            artifacts=BertArtifacts(tmp_path / "checkpoint"),
+            schema=schema,
+            records={"validation": records},
+            frame=pd.DataFrame([{"document_id": "doc", "text_with_boxes": words}]),
+            max_length=32,
+        ),
     )
-    restored, tokenizer, restored_schema, payload = checkpoint.load(torch.device("cpu"))
+    checkpoint.save(model.state_dict(), epoch=19, score=0.9)
+    restored, tokenizer, restored_schema, payload = BertCheckpointLoader(
+        checkpoint.artifacts, torch.device("cpu")
+    ).load()
     assert restored_schema.labels == schema.labels
     assert payload["epoch"] == 19
     assert payload["records"][0]["text_with_boxes"] == words
