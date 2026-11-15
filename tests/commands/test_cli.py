@@ -4,7 +4,6 @@ import pytest
 
 from app.aggregates.bert.params import DatasetName
 from app.config import (
-    BertConfig,
     BertPytorchConfig,
     BertPytorchDebugConfig,
     DocileInvoicesConfig,
@@ -18,11 +17,8 @@ from commands import cli
 def settings():
     return Settings(
         _env_file=None,
-        DATA_PATH="input",
-        DEBUG_ARTIFACTS_PATH="debug",
         DOCILE_TOKEN="unused",
         RANDOM_SEED=123,
-        BERT=BertConfig(),
         BERT_PYTORCH=BertPytorchConfig(),
     )
 
@@ -62,29 +58,6 @@ def test_pytorch_cli_maps_all_config_fields_to_pipeline(settings, monkeypatch):
     assert params.dataset_type == DatasetName.DOCILE
     for name in BertPytorchConfig.model_fields:
         assert getattr(params, name.lower()) == getattr(args, name)
-
-
-def test_transformers_command_keeps_existing_options_and_handler(settings, monkeypatch):
-    factory = Mock()
-    monkeypatch.setattr(cli, "BertTrainingPipeline", factory)
-    args = cli.build_parser(settings).parse_args(
-        [
-            "train",
-            "bert-transformers",
-            "--data-path",
-            "custom-input",
-            "--num-epoch",
-            "2",
-            "--no-load-best-model-at-end",
-        ]
-    )
-    args.handler(args, settings)
-    params = factory.call_args.kwargs["params"]
-    assert params.data_path == "custom-input"
-    assert params.num_epoch == 2
-    assert params.load_best_model_at_end is False
-    assert params.random_seed == 123
-    factory.return_value.run.assert_called_once_with()
 
 
 def test_cli_uses_pytorch_configuration_defaults(settings):
@@ -268,9 +241,7 @@ def test_dataset_selection_config_and_token_privacy(tmp_path, monkeypatch, capsy
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("DATASET_NAME", "docile")
     monkeypatch.setenv("DOCILE_TOKEN", "private-token")
-    settings = Settings(
-        _env_file=None, DATA_PATH="unused", DEBUG_ARTIFACTS_PATH="unused"
-    )
+    settings = Settings(_env_file=None)
     args = cli.build_parser(settings).parse_args(["train", "bert-pytorch"])
     assert args.dataset_name == DatasetName.DOCILE
     assert settings.DOCILE.TOKEN == "private-token"
@@ -285,9 +256,4 @@ def test_dataset_selection_config_and_token_privacy(tmp_path, monkeypatch, capsy
             ["train", "bert-pytorch", "--dataset-name", "unknown"]
         )
     monkeypatch.delenv("DOCILE_TOKEN")
-    assert (
-        Settings(
-            _env_file=None, DATA_PATH="unused", DEBUG_ARTIFACTS_PATH="unused"
-        ).DOCILE.TOKEN
-        == ""
-    )
+    assert Settings(_env_file=None).DOCILE.TOKEN == ""

@@ -13,8 +13,6 @@ from commands import cli
 def settings():
     return Settings(
         _env_file=None,
-        DATA_PATH="unused",
-        DEBUG_ARTIFACTS_PATH="unused",
         LAYOUTLM=LayoutLMConfig(_env_file=None),
     )
 
@@ -92,7 +90,7 @@ def test_config_uses_dotenv_then_environment_then_cli(tmp_path, monkeypatch):
     assert LayoutLMConfig().BATCH_SIZE == 7
     monkeypatch.setenv("LAYOUTLM_BATCH_SIZE", "4")
     monkeypatch.setenv("LAYOUTLM_DEVICE", "cpu")
-    settings = Settings(DATA_PATH="unused", DEBUG_ARTIFACTS_PATH="unused")
+    settings = Settings()
     assert settings.LAYOUTLM.BATCH_SIZE == 4
     assert settings.LAYOUTLM.WARMUP_RATIO == 0.15
     assert settings.LAYOUTLM.DEVICE is LayoutLMDevice.CPU

@@ -3,8 +3,7 @@
 [Back to OCR](../README.md)
 
 Run commands from the project root with `uv run python -m commands.cli`.
-Set `DATA_PATH` and `DEBUG_ARTIFACTS_PATH` in the environment or `.env`, as shown
-in `.env.sample`; settings initialization requires both values for every command.
+Use `.env.sample` as a reference for environment settings.
 Paths in the examples are relative to the project root.
 
 Each example below includes every compatible command-specific option with a
@@ -138,73 +137,6 @@ or `--no-line-items-only` to select another mode. Argparse places both options,
 including their `--no-` forms, in a mutually exclusive group, so pass at most one
 of these four flags. Both settings default to false. To use Kaggle data,
 set `--dataset-name kaggle_invoices` and its prepared CSV path.
-
-## Train BERT with Transformers Trainer
-
-Run the Transformers training pipeline on extracted invoice CSV batches and
-their image directories. `--data-path` must contain an `invoices` directory.
-Artifacts are saved under `<debug-artifacts-path>/bert-invoice-cli`.
-Configuration options use the `BERT_` environment prefix; the three path/seed
-options use `DATA_PATH`, `DEBUG_ARTIFACTS_PATH`, and `RANDOM_SEED`.
-
-The parser accepts every option shown below. The current pipeline uses
-`--data-path` and `--debug-artifacts-path`, but hard-codes its model, seed,
-encoding settings, and Trainer settings instead of reading the corresponding
-parameters. Changing those CLI options currently has no effect. In particular,
-the actual training/evaluation batch sizes are 4/8 and gradient accumulation is
-4. Use `train bert-pytorch` when you need configurable training.
-
-```sh
-uv run python -m commands.cli train bert-transformers \
-  --data-path ./data/raw \
-  --debug-artifacts-path ./data/interim \
-  --random-seed 42 \
-  --model-name google-bert/bert-base-uncased \
-  --max-length-tokens 512 \
-  --model-window-stride 64 \
-  --batch-size 64 \
-  --num-epoch 5 \
-  --learning-rate 2e-5 \
-  --weight-decay 0.01 \
-  --gradient-accumulation-steps 1 \
-  --per-device-train-batch-size 16 \
-  --per-device-eval-batch-size 16 \
-  --eval-strategy epoch \
-  --save-strategy epoch \
-  --logging-strategy steps \
-  --logging-steps 20 \
-  --load-best-model-at-end \
-  --metric-for-best-model f1 \
-  --greater-is-better \
-  --dataloader-num-workers 0
-```
-
-The following meanings describe the accepted configuration parameters, subject
-to the pipeline limitation above.
-
-| Option | Meaning |
-| --- | --- |
-| `--data-path` | Parent of the extracted `invoices` directory. |
-| `--debug-artifacts-path` | Parent directory for training artifacts. |
-| `--random-seed` | Random seed. |
-| `--model-name` | Initial Hugging Face checkpoint. |
-| `--max-length-tokens` | Maximum tokens per document window. |
-| `--model-window-stride` | Overlapping tokens between consecutive windows. |
-| `--batch-size` | Documents per dataset-encoding batch. |
-| `--num-epoch` | Number of training epochs. |
-| `--learning-rate` | Optimizer learning rate. |
-| `--weight-decay` | Optimizer weight-decay coefficient. |
-| `--gradient-accumulation-steps` | Batches accumulated before an optimizer update. |
-| `--per-device-train-batch-size` | Training windows per device per batch. |
-| `--per-device-eval-batch-size` | Evaluation windows per device per batch. |
-| `--eval-strategy` | Evaluation schedule, for example `epoch` or `steps`. |
-| `--save-strategy` | Checkpoint schedule, for example `epoch` or `steps`. |
-| `--logging-strategy` | Logging schedule, for example `steps` or `epoch`. |
-| `--logging-steps` | Steps between logs for step-based logging. |
-| `--load-best-model-at-end` / `--no-load-best-model-at-end` | Enable (default) or disable restoring the best checkpoint. |
-| `--metric-for-best-model` | Metric for checkpoint selection. |
-| `--greater-is-better` / `--no-greater-is-better` | Prefer a larger (default) or smaller checkpoint-selection metric. |
-| `--dataloader-num-workers` | Data loader worker processes. |
 
 ## Train LayoutLMv3
 
