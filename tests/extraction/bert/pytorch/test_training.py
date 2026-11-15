@@ -8,8 +8,8 @@ from torch.utils.data import DataLoader, Dataset
 
 from app.extraction.bert.pytorch.collation import InvoiceDataCollator
 from app.extraction.bert.pytorch.decoding import OCRWordDecoder
+from app.extraction.bert.pytorch.metrics import EvalResult
 from app.extraction.bert.pytorch.training import (
-    EvalResult,
     OCRInvoiceTraining,
     TrainResult,
 )

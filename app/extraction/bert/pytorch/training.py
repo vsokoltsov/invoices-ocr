@@ -4,22 +4,14 @@ from pathlib import Path
 import pandas as pd
 import structlog
 import torch
-from seqeval.metrics import (
-    classification_report,
-    f1_score,
-    precision_score,
-    recall_score,
-)
 from torch import nn
 from torch.utils.data import DataLoader
-from torchmetrics.classification import (
-    MulticlassAccuracy,
-    MulticlassF1Score,
-)
 from tqdm.auto import tqdm
 
 from app.extraction.bert.pytorch.decoding import OCRWordDecoder
 from app.extraction.bert.pytorch.inspector import EntityErrorInspector
+from app.extraction.bert.pytorch.metrics import EvalMetrics, EvalResult
+from app.extraction.enums import IGNORE_INDEX
 
 logger = structlog.get_logger()
 
@@ -27,17 +19,6 @@ logger = structlog.get_logger()
 @dataclass
 class TrainResult:
     loss: float
-
-
-@dataclass
-class EvalResult:
-    loss: float
-    precision: float
-    recall: float
-    f1: float
-    token_accuracy: float
-    token_macro_f1: float
-    per_entity: dict[str, dict[str, float]]
 
 
 @dataclass
@@ -58,6 +39,7 @@ class OCRInvoiceTraining:
     def __post_init__(self):
         if self.epochs < 1:
             raise ValueError("epochs must be positive.")
+        self.metrics = EvalMetrics(self.id2label)
         self.diagnostic_dir = (
             Path(self.diagnostic_dir).expanduser().resolve()
             if self.diagnostic_dir
@@ -79,7 +61,7 @@ class OCRInvoiceTraining:
         for batch in progress_bar:
             batch = {key: value.to(self.device) for key, value in batch.items()}
 
-            valid_tokens = int((batch["labels"] != -100).sum().item())
+            valid_tokens = int((batch["labels"] != IGNORE_INDEX).sum().item())
             if valid_tokens == 0:
                 continue
 
@@ -111,23 +93,7 @@ class OCRInvoiceTraining:
     def eval_one_epoch(self, epoch: int) -> EvalResult:
         self.model.eval()
 
-        num_labels = len(self.id2label)
-
-        accuracy = MulticlassAccuracy(
-            num_classes=num_labels,
-            average="micro",
-        ).to(self.device)
-
-        macro_f1 = MulticlassF1Score(
-            num_classes=num_labels,
-            average="macro",
-        ).to(self.device)
-
-        actual_sequences = []
-        predicted_sequences = []
-
-        total_loss = 0.0
-        total_tokens = 0
+        self.metrics.reset()
 
         progress_bar = tqdm(
             self.val_loader, position=1, desc=f"Eval epoch {epoch}", leave=False
@@ -139,7 +105,7 @@ class OCRInvoiceTraining:
             }
             batch = {key: value.to(self.device) for key, value in batch.items()}
             targets = batch["labels"]
-            valid = targets != -100
+            valid = targets != IGNORE_INDEX
             valid_tokens = int(valid.sum().item())
             if valid_tokens == 0:
                 continue
@@ -166,59 +132,9 @@ class OCRInvoiceTraining:
                         device=self.device,
                     )
 
-            accuracy.update(predictions[valid], targets[valid])
-            macro_f1.update(predictions[valid], targets[valid])
+            self.metrics.update(logits, targets, loss, predictions=predictions)
 
-            total_loss += loss.item() * valid_tokens
-            total_tokens += valid_tokens
-
-            for predicted_row, target_row in zip(
-                predictions.cpu().tolist(),
-                targets.cpu().tolist(),
-            ):
-                actual_sequences.append(
-                    [self.id2label[target] for target in target_row if target != -100]
-                )
-
-                predicted_sequences.append(
-                    [
-                        self.id2label[predicted]
-                        for predicted, target in zip(predicted_row, target_row)
-                        if target != -100
-                    ]
-                )
-
-        if total_tokens == 0:
-            raise ValueError("Evaluation loader contains no supervised tokens.")
-
-        # seqeval accepts integer zero_division values despite its str annotation.
-        # TorchMetrics wraps compute() at runtime; ty misidentifies its binding.
-        return EvalResult(
-            loss=total_loss / total_tokens,
-            precision=precision_score(
-                actual_sequences,
-                predicted_sequences,
-                zero_division=0,  # ty: ignore[invalid-argument-type]
-            ),
-            recall=recall_score(
-                actual_sequences,
-                predicted_sequences,
-                zero_division=0,  # ty: ignore[invalid-argument-type]
-            ),
-            f1=f1_score(
-                actual_sequences,
-                predicted_sequences,
-                zero_division=0,  # ty: ignore[invalid-argument-type]
-            ),
-            token_accuracy=accuracy.compute().item(),  # ty: ignore[missing-argument]
-            token_macro_f1=macro_f1.compute().item(),  # ty: ignore[missing-argument]
-            per_entity=classification_report(
-                actual_sequences,
-                predicted_sequences,
-                output_dict=True,
-                zero_division=0,
-            ),
-        )
+        return self.metrics.compute()
 
     def train(self) -> pd.DataFrame:
         self.model.to(self.device)
