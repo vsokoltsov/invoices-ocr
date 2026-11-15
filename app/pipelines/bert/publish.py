@@ -12,9 +12,7 @@ class PublishModel:
 
     def publish(self, evaluation_result: EvaluationResult) -> str:
         metrics = EvalResult(
-            **json.loads(
-                evaluation_result.metrics_path.read_text(encoding="utf-8")
-            )
+            **json.loads(evaluation_result.metrics_path.read_text(encoding="utf-8"))
         )
 
         return self.publisher.run(

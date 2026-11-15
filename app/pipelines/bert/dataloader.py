@@ -1,14 +1,15 @@
 from dataclasses import dataclass
 
-import torch
 import pandas as pd
-from app.pipelines.bert.builder import BuildResult
+import torch
 from torch.utils.data import DataLoader
 from transformers.tokenization_utils_tokenizers import TokenizersBackend
-from app.extraction.bert.pytorch.schema import InvoiceLabelSchema
-from app.extraction.bert.pytorch.decoding import OCRWordDecoder
-from app.extraction.bert.pytorch.datasets import InvoiceDataset
+
 from app.extraction.bert.pytorch.collation import InvoiceDataCollator
+from app.extraction.bert.pytorch.datasets import InvoiceDataset
+from app.extraction.bert.pytorch.schema import InvoiceLabelSchema
+from app.pipelines.bert.builder import BuildResult
+
 
 @dataclass
 class InvoiceDataLoader:
@@ -19,6 +20,8 @@ class InvoiceDataLoader:
     batch_size: int
     max_length_tokens: int = 512
     num_workers: int = 0
+    random_seed: int = 42
+    include_decoder_metadata: bool = False
 
     def _create_datasets(self, records: list[pd.DataFrame]) -> list[InvoiceDataset]:
         datasets = []
@@ -29,7 +32,7 @@ class InvoiceDataLoader:
                 tokenizer=self.tokenizer,
                 label2id=self.schema.label2id,
                 field_to_entity=self.schema.field_to_entity,
-                max_length=self.max_length_tokens
+                max_length=self.max_length_tokens,
             )
         )
         for record in other_records:
@@ -39,7 +42,7 @@ class InvoiceDataLoader:
                 label2id=self.schema.label2id,
                 field_to_entity=self.schema.field_to_entity,
                 max_length=self.max_length_tokens,
-                include_decoder_metadata=True
+                include_decoder_metadata=self.include_decoder_metadata,
             )
             datasets.append(ds)
         return datasets
@@ -53,7 +56,8 @@ class InvoiceDataLoader:
             shuffle=True,
             num_workers=self.num_workers,
             pin_memory=self.device.type == "cuda",
-            collate_fn=self.collate_fn
+            collate_fn=self.collate_fn,
+            generator=torch.Generator().manual_seed(self.random_seed),
         )
         for ld in other_datasets:
             loaders.append(
@@ -63,7 +67,7 @@ class InvoiceDataLoader:
                     shuffle=False,
                     num_workers=self.num_workers,
                     pin_memory=self.device.type == "cuda",
-                    collate_fn=self.collate_fn
+                    collate_fn=self.collate_fn,
                 )
             )
         return [train_loader, *loaders]
@@ -74,8 +78,4 @@ class InvoiceDataLoader:
         test_df = build_result.records.test
         datasets = self._create_datasets(records=[train_df, val_df, test_df])
         dataloaders = self._create_dataloaders(datasets=datasets)
-        return {
-            "train": dataloaders[0],
-            "val": dataloaders[1],
-            "test": dataloaders[2]
-        }
+        return {"train": dataloaders[0], "val": dataloaders[1], "test": dataloaders[2]}

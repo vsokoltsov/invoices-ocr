@@ -1,83 +1,88 @@
-import json
-import random
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
-import structlog
 import torch
-from sklearn.model_selection import train_test_split
 from torch import nn
 from torch.utils.data import DataLoader
-from transformers import AutoTokenizer, set_seed
+from transformers.tokenization_utils_tokenizers import TokenizersBackend
 
-from app.aggregates.bert.params import BertPytorchParams, DatasetName
-from app.extraction.bert.pytorch.builder import InvoiceRecordBuilder
 from app.extraction.bert.pytorch.checkpoint import BertPytorchCheckpoint
-from app.extraction.bert.pytorch.collation import InvoiceDataCollator
-from app.extraction.bert.pytorch.datasets import InvoiceDataset
 from app.extraction.bert.pytorch.decoding import OCRWordDecoder
-from app.extraction.bert.pytorch.docile.builder import DocileRecordBuilder
-from app.extraction.bert.pytorch.docile.item_builder import DocileItemRecordBuilder
 from app.extraction.bert.pytorch.inspector import EntityErrorInspector
 from app.extraction.bert.pytorch.model import BertFieldExtractor
 from app.extraction.bert.pytorch.schema import InvoiceLabelSchema
-from app.extraction.bert.pytorch.spans import (
-    Normalizer,
-    NumericField,
-    OCRSpanMatcher,
-    OCRSummarySpan,
-)
 from app.extraction.bert.pytorch.training import OCRInvoiceTraining
-from app.extraction.enums import InvoiceBIOLabel, InvoiceField
+from app.extraction.enums import IGNORE_INDEX
+from app.pipelines.bert.builder import BuildResult
+from app.pipelines.bert.split import DatasetsSplit
 
 
 @dataclass(frozen=True)
 class TrainingResult:
+    """Paths to the checkpoint directory and scalar training history."""
+
     checkpoint_path: Path
     history_path: Path
 
+
 @dataclass
-class BertTrainingPipeline:
+class BertTraining:
     model: BertFieldExtractor
     schema: InvoiceLabelSchema
-    inspector: EntityErrorInspector
+    tokenizer: TokenizersBackend
     device: torch.device
     epochs: int
     learning_rate: float
     weight_decay: float
-    warmup_ratio: float
-    output_dir: Path
     checkpoint_path: Path
-    diagnostc_dir: Path | None = None
-    validation_records: list[dict] | None = None
+    history_path: Path
+    max_length_tokens: int = 512
+    inspector: EntityErrorInspector | None = None
+    diagnostic_dir: Path | None = None
     word_decoder: OCRWordDecoder | None = None
 
-    def run(self, dataloaders: dict[str, DataLoader]):
-        optimizer = torch.optim.AdamW(
-            self.model.parameters(),
-            lr=self.learning_rate,
-            weight_decay=self.weight_decay,
-        )
-        criterion = nn.CrossEntropyLoss(ignore_index=-100)
+    def train(
+        self,
+        dataloaders: dict[str, DataLoader],
+        build_result: BuildResult,
+        split: DatasetsSplit,
+    ) -> TrainingResult:
+        validation_records = build_result.records.val.to_dict(orient="records")
         trainer = OCRInvoiceTraining(
             model=self.model,
-            optimizer=optimizer,
-            criterion=criterion,
-            train_loader=dataloaders['train'],
-            val_loader=dataloaders['val'],
+            optimizer=torch.optim.AdamW(
+                self.model.parameters(),
+                lr=self.learning_rate,
+                weight_decay=self.weight_decay,
+            ),
+            criterion=nn.CrossEntropyLoss(ignore_index=IGNORE_INDEX),
+            train_loader=dataloaders["train"],
+            val_loader=dataloaders["val"],
             device=self.device,
             epochs=self.epochs,
             id2label=self.schema.id2label,
             inspector=self.inspector,
-            diagnostic_dir=self.diagnostc_dir,
-            validation_records=self.validation_records,
+            diagnostic_dir=self.diagnostic_dir,
+            validation_records=validation_records,
             word_decoder=self.word_decoder,
         )
-        self.model.to("cpu")
-        return TrainingResult(
-            checkpoint_path=self.checkpoint_path,
-            history_path=self.output_dir / "history.csv",
-        )
-        
+        try:
+            history = trainer.train()
+            self.history_path.parent.mkdir(parents=True, exist_ok=True)
+            history.to_csv(self.history_path, index=False)
+            best_epoch = int(history.loc[history["validation_f1"].idxmax(), "epoch"])
+            BertPytorchCheckpoint(self.checkpoint_path).save(
+                self.model,
+                self.tokenizer,
+                self.schema,
+                validation_records,
+                pd.concat((split.train, split.val, split.test)),
+                epoch=best_epoch,
+                max_length=self.max_length_tokens,
+                test_records=build_result.records.test.to_dict(orient="records"),
+                decoder="ocr_word" if self.word_decoder is not None else "token_argmax",
+            )
+        finally:
+            self.model.to("cpu")
+        return TrainingResult(self.checkpoint_path, self.history_path)
