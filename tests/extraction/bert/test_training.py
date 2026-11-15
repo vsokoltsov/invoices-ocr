@@ -1,19 +1,25 @@
 import math
+from types import SimpleNamespace
 from unittest.mock import Mock
 
+import pandas as pd
 import pytest
 import torch
 from torch import nn
 from torch.utils.data import DataLoader, Dataset
+from transformers import BertConfig
 
 from app.extraction.bert.artifacts import BertArtifacts
+from app.extraction.bert.checkpoint import BertEvaluationRecords, BertPytorchCheckpoint
 from app.extraction.bert.collation import InvoiceDataCollator
 from app.extraction.bert.decoding import OCRWordDecoder
 from app.extraction.bert.metrics import EvalResult
 from app.extraction.bert.training import (
     OCRInvoiceTraining,
-    TrainResult,
 )
+from app.extraction.metrics import TrainResult
+from app.extraction.schema import InvoiceLabelSchema
+from app.extraction.training import BestCheckpointWriter
 
 
 class TinyTagger(nn.Module):
@@ -127,6 +133,7 @@ def test_train_restores_best_checkpoint_and_returns_scalar_history(
     monkeypatch.setattr(trainer, "train_one_epoch", train_epoch)
     monkeypatch.setattr(trainer, "eval_one_epoch", evaluate)
     history = trainer.train()
+    pd.testing.assert_frame_equal(pd.read_csv(trainer.artifacts.history_path), history)
     assert history["validation_f1"].tolist() == [0.9, 0.5]
     assert "validation_per_entity" not in history
     assert torch.all(trainer.model.embedding.weight == 1)
@@ -136,6 +143,75 @@ def test_train_restores_best_checkpoint_and_returns_scalar_history(
 def test_training_rejects_nonpositive_epoch_count():
     with pytest.raises(ValueError, match="epochs must be positive"):
         make_trainer(epochs=0)
+
+
+@pytest.mark.parametrize("interrupted", [False, True])
+def test_checkpoint_is_saved_only_on_improvement_and_survives_failure(
+    tmp_path, fast_tokenizer, monkeypatch, interrupted
+):
+    trainer = make_trainer(epochs=4)
+    trainer.model.bert = SimpleNamespace(config=BertConfig())
+    artifacts = BertArtifacts(tmp_path)
+    schema = InvoiceLabelSchema({"seller_name": "NAME"})
+    records = [{"document_id": "doc", "text": "Acme", "entities": []}]
+    checkpoint = BertPytorchCheckpoint(
+        artifacts=artifacts,
+        encoder_config=trainer.model.bert.config,
+        tokenizer=fast_tokenizer,
+        evaluation_records=BertEvaluationRecords(
+            artifacts=artifacts,
+            schema=schema,
+            records={"validation": records, "test": records},
+            frame=pd.DataFrame({"document_id": ["doc"]}),
+            max_length=3,
+        ),
+    )
+    save = Mock(wraps=checkpoint.save)
+    monkeypatch.setattr(checkpoint, "save", save)
+    trainer.checkpoint_writer = BestCheckpointWriter(checkpoint)
+
+    def train_epoch(epoch):
+        if epoch > 1:
+            # The previous best must already exist before another epoch starts.
+            assert artifacts.load_records("validation")["epoch"] == (
+                3 if epoch == 4 else 1
+            )
+        if interrupted and epoch == 4:
+            raise RuntimeError("training interrupted")
+        with torch.no_grad():
+            trainer.model.embedding.weight.fill_(epoch)
+        return TrainResult(0.1)
+
+    monkeypatch.setattr(trainer, "train_one_epoch", train_epoch)
+    scores = [0.5, 0.5, 0.8, 0.6]
+    monkeypatch.setattr(
+        trainer,
+        "eval_one_epoch",
+        lambda epoch: EvalResult(0.1, 1.0, 1.0, scores[epoch - 1], 1.0, 1.0, {}),
+    )
+    if interrupted:
+        with pytest.raises(RuntimeError, match="training interrupted"):
+            trainer.train()
+    else:
+        trainer.train()
+    assert save.call_count == 2
+    payload = artifacts.load_records("validation")
+    assert payload["epoch"] == 3
+    assert payload["val_entity_f1"] == 0.8
+    assert artifacts.load_records("test")["epoch"] == 3
+    assert torch.all(
+        artifacts.load_weights(artifacts.weights_path)["embedding.weight"] == 3
+    )
+
+
+def test_nonfinite_training_loss_stops_before_backward_or_optimizer_step():
+    trainer = make_trainer()
+    with torch.no_grad():
+        trainer.model.embedding.weight.fill_(float("nan"))
+    with pytest.raises(FloatingPointError, match="Training loss is not finite"):
+        trainer.train_one_epoch(1)
+    assert not trainer.optimizer.state
+    assert all(parameter.grad is None for parameter in trainer.model.parameters())
 
 
 def test_external_evaluation_loader_does_not_replace_validation_loader():

@@ -7,7 +7,7 @@ import pytest
 
 from app.extraction.enums import FIELD_TO_ENTITY
 from app.extraction.layoutlm.builder import InvoiceBuilder
-from app.extraction.layoutlm.schema import InvoiceLabelSchema
+from app.extraction.schema import InvoiceLabelSchema
 
 
 def test_preparation_orders_words_normalizes_boxes_and_keeps_pages(document_row):

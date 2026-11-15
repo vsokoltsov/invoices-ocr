@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 from tqdm.auto import tqdm
 
-from app.extraction.layoutlm.schema import InvoiceLabelSchema
+from app.extraction.schema import InvoiceLabelSchema
 
 
 class InvoiceBuilder:

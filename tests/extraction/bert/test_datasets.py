@@ -1,5 +1,5 @@
 from app.extraction.bert.datasets import InvoiceDataset
-from app.extraction.bert.schema import InvoiceLabelSchema
+from app.extraction.schema import InvoiceLabelSchema
 
 
 def make_dataset(fast_tokenizer, text, entities, ignored_regions=(), max_length=32):

@@ -79,3 +79,41 @@ class OCRWordDecoder:
             for index in indices[1:]:
                 predictions[index] = inside
         return predictions
+
+
+@dataclass
+class OCRWordBatchDecoder:
+    """Adapt OCR-word decoding to padded batches.
+
+    Attributes:
+        decoder: Word-level pooling strategy operating on complete OCR words.
+    """
+
+    decoder: OCRWordDecoder
+
+    def decode(self, logits: torch.Tensor, batch: dict) -> torch.Tensor:
+        """Decode each unpadded window while retaining padding predictions.
+
+        Args:
+            logits: Scores with shape [batch, tokens, labels].
+            batch: Batch containing decoder_metadata with offsets and OCR words per window.
+
+        Returns:
+            Label IDs on the logits device with the same batch/token dimensions.
+
+        Raises:
+            ValueError: The batch lacks decoder_metadata.
+        """
+        metadata = batch.get("decoder_metadata")
+        if metadata is None:
+            raise ValueError("OCR-word evaluation requires decoding metadata")
+        predictions = logits.argmax(dim=-1)
+        for index, item in enumerate(metadata):
+            length = len(item["offsets"])
+            predictions[index, :length] = torch.tensor(
+                self.decoder.decode(
+                    logits[index, :length], item["offsets"], item["words"]
+                ),
+                device=logits.device,
+            )
+        return predictions

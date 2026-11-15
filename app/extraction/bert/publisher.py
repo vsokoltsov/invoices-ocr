@@ -1,84 +1,67 @@
 from dataclasses import asdict, dataclass
+from pathlib import Path
+from typing import Any
 
-from clearml import OutputModel, Task
+from clearml import OutputModel
 
 from app.extraction.bert.artifacts import BertArtifacts
 from app.extraction.bert.metrics import EvalResult
+from app.extraction.publisher import ClearMLPublisher as BaseClearMLPublisher
 
 
 @dataclass
-class ClearMLPublisher:
+class ClearMLPublisher(BaseClearMLPublisher):
+    """Adapt shared ClearML publication to BERT artifacts.
+
+    Attributes:
+        artifacts: BERT checkpoint and run output storage.
+        task_name: Default task name and registered model name prefix.
+    """
+
     artifacts: BertArtifacts
-    project_name: str = "ocr"
     task_name: str = "bert-pytorch"
 
-    def run(self) -> str:
-        files = self.artifacts.publication_files()
-        config = self.artifacts.load_config()
-        test_metrics = EvalResult(**self.artifacts.load_metrics())
+    def upload_weights(self, model: OutputModel) -> None:
+        """Upload the complete BERT checkpoint directory as a ZIP package.
 
-        task = Task.init(
-            project_name=self.project_name,
-            task_name=self.task_name,
-            reuse_last_task_id=False,
-            output_uri=True,
-            auto_connect_frameworks=False,
-            auto_connect_arg_parser=False,
+        Waits for upload completion and keeps local files.
+
+        Args:
+            model: ClearML output model receiving the weights.
+        """
+        model.update_weights_package(
+            weights_path=str(self.artifacts.checkpoint_dir),
+            target_filename=f"{self.task_name}-best.zip",
+            auto_delete_file=False,
+            async_enable=False,
         )
 
-        try:
-            task.connect(config, name="Training")
+    def artifact_payloads(
+        self, files: dict[str, Path], config: dict, metrics: dict
+    ) -> dict[str, Any]:
+        """Attach history files, structured test metrics, and configuration.
 
-            model = OutputModel(
-                task=task,
-                name=f"{self.task_name}-best",
-                framework="PyTorch",
-                config_dict=config,
-            )
+        Args:
+            files: Named files validated by the artifact store.
+            config: Saved training configuration.
+            metrics: Saved BERT evaluation result.
 
-            # Upload all checkpoint files together for offline loading.
-            model.update_weights_package(
-                weights_path=str(self.artifacts.checkpoint_dir),
-                target_filename=f"{self.task_name}-best.zip",
-                auto_delete_file=False,
-                async_enable=False,
-            )
+        Returns:
+            Named file and dictionary payloads uploaded by the shared publisher.
+        """
+        return {
+            **files,
+            "test_metrics": asdict(EvalResult(**metrics)),
+            "config": config,
+        }
 
-            artifacts = {
-                **files,
-                "test_metrics": asdict(test_metrics),
-                "config": config,
-            }
+    def test_scalars(self, metrics: dict) -> dict[str, float]:
+        """Select the saved test metrics for ClearML scalar reporting.
 
-            for name, artifact in artifacts.items():
-                uploaded = task.upload_artifact(
-                    name=name,
-                    artifact_object=artifact,
-                    wait_on_upload=True,
-                )
+        Args:
+            metrics: Saved test metric dictionary.
 
-                if not uploaded:
-                    raise RuntimeError(f"ClearML upload failed: {name}")
-
-            for name in (
-                "loss",
-                "precision",
-                "recall",
-                "f1",
-                "token_accuracy",
-                "token_macro_f1",
-            ):
-                task.get_logger().report_scalar(
-                    title="Test",
-                    series=name,
-                    value=float(getattr(test_metrics, name)),
-                    iteration=0,
-                )
-
-            return model.id
-
-        except Exception as error:
-            task.mark_failed(status_reason=str(error))
-            raise
-        finally:
-            task.close()
+        Returns:
+            BERT token and entity scalars.
+        """
+        return EvalResult(**metrics).scalars

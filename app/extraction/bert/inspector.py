@@ -3,18 +3,29 @@ from dataclasses import dataclass
 
 import pandas as pd
 import torch
-from seqeval.metrics import classification_report
 from seqeval.metrics.sequence_labeling import get_entities
 from transformers import PreTrainedTokenizerBase
 
 from app.extraction.bert.artifacts import BertArtifacts
 from app.extraction.bert.datasets import InvoiceDataset
 from app.extraction.bert.decoding import OCRWordDecoder
-from app.extraction.bert.schema import InvoiceLabelSchema
+from app.extraction.metrics import BioEntityScorer
+from app.extraction.schema import InvoiceLabelSchema
 
 
 @dataclass
 class EntityErrorInspector:
+    """Export entity errors with the same token mask used during evaluation.
+
+    Attributes:
+        model: Token classifier placed on the configured device by the caller.
+        tokenizer: Fast tokenizer that supplies source character offsets.
+        label_schema: Shared field mapping and BIO label IDs.
+        device: Device used for inference.
+        max_length: Maximum token window length.
+        word_decoder: Optional OCR-word pooling strategy for predictions.
+    """
+
     model: torch.nn.Module
     tokenizer: PreTrainedTokenizerBase
     label_schema: InvoiceLabelSchema
@@ -61,7 +72,19 @@ class EntityErrorInspector:
 
     @torch.inference_mode()
     def run(self, records, artifacts: BertArtifacts, *, epoch: int):
-        """Export validation entity metrics and errors with the evaluation mask."""
+        """Write entity metrics and matched, missing, or extra span diagnostics.
+
+        Args:
+            records: Labeled validation records with text and spans. OCR-word
+                decoding also requires text_with_boxes with character offsets.
+            artifacts: Storage component for per-entity and error CSV files.
+            epoch: Epoch number included in diagnostic rows.
+
+        Notes:
+            Runs inference without gradients and leaves the model in evaluation
+            mode. Uses the supervision mask from the token dataset and scores
+            each token window separately with seqeval's default BIO rules.
+        """
         self.model.eval()
 
         errors = []
@@ -155,11 +178,8 @@ class EntityErrorInspector:
                             }
                         )
 
-        report = classification_report(
-            actual_sequences,
-            predicted_sequences,
-            output_dict=True,
-            zero_division=0,
+        report = (
+            BioEntityScorer().score(actual_sequences, predicted_sequences).per_entity
         )
         report_df = pd.DataFrame(report).T
 

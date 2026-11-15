@@ -1,9 +1,9 @@
 from dataclasses import dataclass, field
 
 from app.extraction.bert.builder import InvoiceRecordBuilder
-from app.extraction.bert.schema import InvoiceLabelSchema
 from app.extraction.bert.spans import assign_candidate_labels
 from app.extraction.enums import ITEM_FIELD_TO_ENTITY
+from app.extraction.schema import InvoiceLabelSchema
 
 
 @dataclass

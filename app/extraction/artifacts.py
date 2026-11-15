@@ -113,3 +113,14 @@ class RunArtifacts(ABC):
     @abstractmethod
     def checkpoint_location(self) -> Path:
         """Return the model's checkpoint file or directory."""
+
+    @abstractmethod
+    def publication_files(self) -> dict[str, Path]:
+        """Validate model-specific outputs before publishing.
+
+        Returns:
+            Artifact names mapped to local upload paths.
+
+        Raises:
+            FileNotFoundError: A required checkpoint or run output is absent.
+        """

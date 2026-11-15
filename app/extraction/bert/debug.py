@@ -8,7 +8,7 @@ import torch
 from app.aggregates.bert.params import BertPytorchDebugParams
 from app.extraction.bert.artifacts import BertArtifacts
 from app.extraction.bert.builder import InvoiceRecordBuilder
-from app.extraction.bert.checkpoint import BertPytorchCheckpoint
+from app.extraction.bert.checkpoint import BertCheckpointLoader, BertEvaluationRecords
 from app.extraction.bert.decoding import OCRWordDecoder
 from app.extraction.bert.inspector import EntityErrorInspector
 from app.extraction.bert.item_builder import ItemRecordBuilder
@@ -85,15 +85,14 @@ class BertPytorchDebugPipeline:
             raise ValueError(
                 "Rebuilt validation split differs from checkpoint; check dataset, seed, and preparation code"
             )
-        return BertPytorchCheckpoint(reports).save_records(
-            "test",
-            test,
-            frame,
-            schema,
-            epoch=validation["epoch"],
+        return BertEvaluationRecords(
+            artifacts=reports,
+            schema=schema,
+            records={"test": test},
+            frame=frame,
             max_length=validation["max_length"],
             decoder=validation.get("decoder", "token_argmax"),
-        )
+        ).save(epoch=validation["epoch"])["test"]
 
     def run(self, params: BertPytorchDebugParams) -> Path:
         artifacts = BertArtifacts(Path(params.checkpoint_dir))
@@ -111,9 +110,9 @@ class BertPytorchDebugPipeline:
             if torch.backends.mps.is_available()
             else "cpu"
         )
-        model, tokenizer, schema, payload = BertPytorchCheckpoint(artifacts).load(
-            device
-        )
+        model, tokenizer, schema, payload = BertCheckpointLoader(
+            artifacts, device
+        ).load()
         if params.split == "test":
             payload = self._test_payload(params, artifacts, reports, schema, payload)
         records = payload["records"]

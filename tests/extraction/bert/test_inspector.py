@@ -4,7 +4,7 @@ from torch import nn
 
 from app.extraction.bert.artifacts import BertArtifacts
 from app.extraction.bert.inspector import EntityErrorInspector
-from app.extraction.bert.schema import InvoiceLabelSchema
+from app.extraction.schema import InvoiceLabelSchema
 
 
 class AddressTagger(nn.Module):

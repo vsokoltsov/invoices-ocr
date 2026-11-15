@@ -2,7 +2,6 @@ from dataclasses import dataclass, field
 
 import pandas as pd
 
-from app.extraction.bert.schema import InvoiceLabelSchema
 from app.extraction.bert.spans import (
     assign_candidate_labels,
     build_spans,
@@ -11,6 +10,7 @@ from app.extraction.bert.spans import (
     resolve_name_address_nesting,
     resolve_total_amount_due_overlap,
 )
+from app.extraction.schema import InvoiceLabelSchema
 
 
 @dataclass

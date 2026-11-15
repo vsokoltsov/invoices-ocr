@@ -10,18 +10,18 @@ from torch.utils.data import DataLoader
 from transformers import BertConfig, BertModel
 
 from app.aggregates.bert.params import BertPytorchParams
+from app.extraction import publisher as publisher_module
 from app.extraction.bert import model as model_module
-from app.extraction.bert import publisher as publisher_module
 from app.extraction.bert.artifacts import BertArtifacts
-from app.extraction.bert.checkpoint import BertPytorchCheckpoint
+from app.extraction.bert.checkpoint import BertCheckpointLoader
 from app.extraction.bert.collation import InvoiceDataCollator
 from app.extraction.bert.datasets import InvoiceDataset
+from app.extraction.results import TrainingResult
 from app.pipelines.bert import pipeline as pipeline_module
 from app.pipelines.bert.builder import InvoicesBuilder
 from app.pipelines.bert.evaluate import EvaluateTraining
 from app.pipelines.bert.pipeline import BertTrainingPipeline
 from app.pipelines.bert.split import DatasetsSplit
-from app.pipelines.bert.training import TrainingResult
 
 
 @pytest.fixture
@@ -149,9 +149,9 @@ def test_graph_trains_reloads_evaluates_and_publishes(
     )
     for split in ("train", "val", "test"):
         assert pd.read_csv(directory / f"{split}_rejected.csv").empty
-    saved_model, tokenizer, schema, snapshot = BertPytorchCheckpoint(
-        BertArtifacts(directory)
-    ).load(torch.device("cpu"))
+    saved_model, tokenizer, schema, snapshot = BertCheckpointLoader(
+        BertArtifacts(directory), torch.device("cpu")
+    ).load()
     assert snapshot["max_length"] == 16
     assert snapshot["decoder"] == "ocr_word"
     assert (

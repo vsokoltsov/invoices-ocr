@@ -8,7 +8,7 @@ from app.extraction.bert.builder import (
     prepare_docile_records,
 )
 from app.extraction.bert.datasets import InvoiceDataset
-from app.extraction.bert.schema import InvoiceLabelSchema
+from app.extraction.schema import InvoiceLabelSchema
 
 
 def docile_frame(text, fields):

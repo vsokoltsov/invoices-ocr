@@ -2,75 +2,99 @@ from dataclasses import dataclass
 from typing import cast
 
 import torch
-from seqeval.metrics import classification_report
 from seqeval.scheme import IOB2
-from torch import nn
 from torch.utils.data import DataLoader
-from tqdm.auto import tqdm
 
+from app.extraction.batches import TensorBatchAdapter
+from app.extraction.evaluation import TokenClassificationEvaluation
 from app.extraction.layoutlm.dataset import InvoiceDataset
 from app.extraction.layoutlm.metrics import EpochMetrics, ValidationMetricsResult
-from app.extraction.layoutlm.schema import InvoiceLabelSchema
-
-
-def move_inputs(
-    batch: dict[str, torch.Tensor], device: torch.device
-) -> dict[str, torch.Tensor]:
-    return {
-        key: batch[key].to(device, non_blocking=True)
-        for key in ("input_ids", "attention_mask", "bbox", "pixel_values")
-    }
+from app.extraction.metrics import BioEntityScorer
+from app.extraction.schema import InvoiceLabelSchema
 
 
 @dataclass
-class LayoutLMEvaluation:
-    """Evaluate word labels and strict BIO entities after restoring complete pages."""
+class LayoutLMEvaluation(TokenClassificationEvaluation[ValidationMetricsResult]):
+    """Score LayoutLM words and strict BIO entities after page reconstruction.
 
-    model: nn.Module
+    The caller supplies the model, execution device, and criterion through the
+    shared evaluation constructor.
+
+    Attributes:
+        metrics: Word-level confusion matrix and loss accumulator.
+        schema: BIO mappings used to reconstruct page label sequences.
+    """
+
     metrics: EpochMetrics
     schema: InvoiceLabelSchema
-    device: torch.device
-    criterion: nn.Module
 
-    @torch.inference_mode()
-    def evaluate(self, loader: DataLoader, epoch: int) -> ValidationMetricsResult:
-        self.model.eval()
+    batch_adapter = TensorBatchAdapter(
+        ("input_ids", "attention_mask", "bbox", "pixel_values")
+    )
+
+    @property
+    def ignore_index(self) -> int:
+        """Return the target ID excluded from scoring.
+
+        Returns:
+            Ignore index configured on the metric accumulator.
+        """
+        return self.metrics.ignore_index
+
+    def reset(self) -> None:
+        """Clear metrics and initialize prediction collection for a fresh pass."""
         self.metrics.reset()
+        self.word_predictions: dict[tuple[int, int], int] = {}
 
-        word_predictions = {}
+    def update(
+        self,
+        batch: dict,
+        logits: torch.Tensor,
+        labels: torch.Tensor,
+        loss: torch.Tensor,
+    ) -> None:
+        """Collect first-subtoken predictions keyed by page and OCR word.
 
-        progress_bar = tqdm(loader, position=1, desc=f"Eval epoch {epoch}", leave=False)
-        for batch in progress_bar:
-            inputs = move_inputs(batch, self.device)
-            labels = batch["labels"].to(self.device, non_blocking=True)
+        Args:
+            batch: Original batch with word/page metadata or decoding metadata.
+            logits: Raw token scores.
+            labels: Target label IDs with ignored positions masked.
+            loss: Scalar mean loss over supervised tokens.
 
-            logits = self.model(**inputs)
-            loss = self.criterion(
-                logits.reshape(-1, logits.shape[-1]),
-                labels.reshape(-1),
-            )
+        Raises:
+            ValueError: A page word appears more than once in the evaluated windows.
+        """
+        self.metrics.update(logits, labels, loss)
+        predicted = logits.argmax(dim=-1).cpu()
+        for batch_index, page_index in enumerate(batch["page_index"].tolist()):
+            for token_index, word_index in enumerate(
+                batch["word_ids"][batch_index].tolist()
+            ):
+                if word_index < 0:
+                    continue
 
-            if not torch.isfinite(loss):
-                raise FloatingPointError("Evaluation loss is not finite")
+                key = (page_index, word_index)
 
-            self.metrics.update(logits, labels, loss)
-            predicted = logits.argmax(dim=-1).cpu()
+                if key in self.word_predictions:
+                    raise ValueError("A word was evaluated more than once")
 
-            for batch_index, page_index in enumerate(batch["page_index"].tolist()):
-                for token_index, word_index in enumerate(
-                    batch["word_ids"][batch_index].tolist()
-                ):
-                    if word_index < 0:
-                        continue
+                self.word_predictions[key] = int(
+                    predicted[batch_index, token_index].item()
+                )
 
-                    key = (page_index, word_index)
+    def compute(self, loader: DataLoader) -> ValidationMetricsResult:
+        # A token-window boundary must not split an entity during page scoring.
+        """Reconstruct complete pages and score strict IOB2 entities.
 
-                    if key in word_predictions:
-                        raise ValueError("A word was evaluated more than once")
+        Args:
+            loader: Loader whose dataset supplies complete page records.
 
-                    word_predictions[key] = predicted[batch_index, token_index].item()
+        Returns:
+            Word metrics plus strict page-level entity scores.
 
-        # Restore complete pages before measuring entity boundaries.
+        Raises:
+            KeyError: The loader omitted an expected page word.
+        """
         true_sequences = []
         pred_sequences = []
 
@@ -82,30 +106,20 @@ class LayoutLMEvaluation:
 
             pred_sequences.append(
                 [
-                    self.schema.id2label[word_predictions[(page_index, word_index)]]
+                    self.schema.id2label[
+                        self.word_predictions[(page_index, word_index)]
+                    ]
                     for word_index in range(len(page["words"]))
                 ]
             )
 
-        report = classification_report(
-            true_sequences,
-            pred_sequences,
-            mode="strict",
-            scheme=IOB2,
-            output_dict=True,
-            zero_division=0,
+        report = BioEntityScorer(mode="strict", scheme=IOB2).score(
+            true_sequences, pred_sequences
         )
-        report = {
-            entity: {
-                key: int(value) if key == "support" else float(value)
-                for key, value in values.items()
-            }
-            for entity, values in report.items()
-        }
         return ValidationMetricsResult(
             word_metrics=self.metrics.compute(),
-            entity_precision=float(report["micro avg"]["precision"]),
-            entity_recall=float(report["micro avg"]["recall"]),
-            entity_f1=float(report["micro avg"]["f1-score"]),
-            entity_report=report,
+            entity_precision=report.precision,
+            entity_recall=report.recall,
+            entity_f1=report.f1,
+            entity_report=report.per_entity,
         )

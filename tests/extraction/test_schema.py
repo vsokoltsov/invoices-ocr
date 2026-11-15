@@ -1,8 +1,7 @@
 import pytest
 
-from app.extraction.bert.schema import InvoiceLabelSchema as BertLabelSchema
 from app.extraction.enums import FIELD_TO_ENTITY
-from app.extraction.layoutlm.schema import InvoiceLabelSchema
+from app.extraction.schema import InvoiceLabelSchema
 
 
 def test_default_schema_uses_shared_fields_and_bio_labels():
@@ -33,9 +32,6 @@ def test_default_schema_uses_shared_fields_and_bio_labels():
     assert schema.label2id["O"] == 0
     assert schema.id2label[18] == "I-TOTAL"
     assert schema.field_to_entity is not FIELD_TO_ENTITY
-    bert_schema = BertLabelSchema()
-    assert schema.field_to_entity == bert_schema.field_to_entity
-    assert schema.label2id == bert_schema.label2id
 
 
 def test_custom_schema_keeps_order_and_copies_input():

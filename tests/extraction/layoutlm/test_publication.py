@@ -4,10 +4,10 @@ from unittest.mock import Mock
 import pandas as pd
 import pytest
 
-from app.extraction.layoutlm import publisher as publisher_module
+from app.extraction import publisher as publisher_module
 from app.extraction.layoutlm.artifacts import LayoutLMArtifacts
 from app.extraction.layoutlm.publisher import ClearMLPublisher
-from app.pipelines.layoutlm.evaluate import EvaluationResult
+from app.extraction.results import EvaluationResult
 from app.pipelines.layoutlm.publish import PublishModel
 
 

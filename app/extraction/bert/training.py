@@ -1,161 +1,142 @@
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 
 import pandas as pd
-import structlog
-import torch
-from torch import nn
-from torch.utils.data import DataLoader
-from tqdm.auto import tqdm
 
+from app.extraction.batches import TensorBatchAdapter
 from app.extraction.bert.artifacts import BertArtifacts
 from app.extraction.bert.decoding import OCRWordDecoder
 from app.extraction.bert.evaluation import BertEvaluation
 from app.extraction.bert.inspector import EntityErrorInspector
 from app.extraction.bert.metrics import EvalMetrics, EvalResult
-from app.extraction.enums import IGNORE_INDEX
-
-logger = structlog.get_logger()
+from app.extraction.metrics import LossMetrics, TrainResult
+from app.extraction.protocols import ValidationResult
+from app.extraction.training import (
+    BestCheckpointWriter,
+    ConstantSchedule,
+    HistoryWriter,
+    TokenClassificationTraining,
+    TrainingCallback,
+)
 
 
 @dataclass
-class TrainResult:
-    loss: float
+class DiagnosticsWriter(TrainingCallback):
+    """Write BERT entity diagnostics after each validation epoch.
+
+    Attributes:
+        inspector: Inspector using the current model and decoder.
+        artifacts: Run storage from which epoch report paths are derived.
+        records: Validation records aligned with the inspected documents.
+    """
+
+    inspector: EntityErrorInspector
+    artifacts: BertArtifacts
+    records: list[dict]
+
+    def on_epoch(
+        self, epoch: int, validation: ValidationResult, history: pd.DataFrame
+    ) -> None:
+        """Inspect validation records and save reports for this epoch.
+
+        Args:
+            epoch: One-based epoch used in the diagnostic directory name.
+            validation: Validation metrics; unused by this callback.
+            history: Epoch history; unused by this callback.
+        """
+        self.inspector.run(
+            self.records, artifacts=self.artifacts.diagnostics(epoch), epoch=epoch
+        )
 
 
 @dataclass
-class OCRInvoiceTraining:
-    model: nn.Module
-    optimizer: torch.optim.Optimizer
-    criterion: nn.Module
-    train_loader: DataLoader
-    val_loader: DataLoader
-    device: torch.device
-    epochs: int
+class OCRInvoiceTraining(TokenClassificationTraining[TrainResult, EvalResult]):
+    """Configure shared training for BERT token windows.
+
+    Uses a constant learning rate and seqeval default BIO scoring. Model, loaders,
+    optimizer, criterion, device, and epoch count are inherited from the shared
+    trainer. A checkpoint callback packages weights only on score improvement.
+
+    Attributes:
+        id2label: Mapping used by token and BIO metrics.
+        inspector: Optional entity-error diagnostic component.
+        artifacts: Optional run storage for per-epoch history and diagnostics.
+        validation_records: Records required when diagnostics are enabled.
+        word_decoder: Optional OCR-word decoder; otherwise use token argmax.
+        checkpoint_writer: Optional callback that saves improved model weights.
+    """
+
     id2label: dict[int, str]
     inspector: EntityErrorInspector | None = None
     artifacts: BertArtifacts | None = None
     validation_records: list[dict] | None = None
     word_decoder: OCRWordDecoder | None = None
+    checkpoint_writer: BestCheckpointWriter | None = None
 
-    def __post_init__(self):
-        if self.epochs < 1:
-            raise ValueError("epochs must be positive.")
+    batch_adapter = TensorBatchAdapter(("input_ids", "attention_mask"))
+
+    def __post_init__(self) -> None:
+        """Initialize BERT metrics and validate enabled diagnostic inputs.
+
+        Raises:
+            ValueError: Epochs are invalid or enabled diagnostics lack validation records.
+        """
+        super().__post_init__()
         self.metrics = EvalMetrics(self.id2label)
-        if (
-            self.inspector is not None
-            and self.artifacts is not None
-            and self.artifacts.diagnostics_dir is not None
-        ):
-            if self.validation_records is None:
-                raise ValueError("validation_records are required for diagnostics")
+        self._training_metrics = LossMetrics()
+        self._schedule = ConstantSchedule()
+        self.callbacks()
 
-    def train_one_epoch(self, epoch: int) -> TrainResult:
-        self.model.train()
+    @property
+    def training_metrics(self) -> LossMetrics:
+        """Return the supervised-token loss accumulator.
 
-        total_loss = 0.0
-        total_tokens = 0
+        Returns:
+            BERT training loss accumulator.
+        """
+        return self._training_metrics
 
-        progress_bar = tqdm(
-            self.train_loader, position=1, desc=f"Train epoch {epoch}", leave=False
-        )
-        for batch in progress_bar:
-            batch = {key: value.to(self.device) for key, value in batch.items()}
+    @property
+    def schedule(self) -> ConstantSchedule:
+        """Return the constant learning-rate policy.
 
-            valid_tokens = int((batch["labels"] != IGNORE_INDEX).sum().item())
-            if valid_tokens == 0:
-                continue
+        Returns:
+            Policy that leaves the optimizer learning rate unchanged.
+        """
+        return self._schedule
 
-            self.optimizer.zero_grad(set_to_none=True)
+    def make_evaluator(self) -> BertEvaluation:
+        """Build BERT evaluation using the current decoder configuration.
 
-            logits = self.model(
-                input_ids=batch["input_ids"],
-                attention_mask=batch["attention_mask"],
-            )
-            loss = self.criterion(
-                logits.reshape(-1, logits.shape[-1]),
-                batch["labels"].reshape(-1),
-            )
-
-            loss.backward()
-            nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
-            self.optimizer.step()
-
-            # Weight the epoch loss by the number of supervised tokens.
-            total_loss += loss.item() * valid_tokens
-            total_tokens += valid_tokens
-
-        if total_tokens == 0:
-            raise ValueError("Training loader contains no supervised tokens.")
-
-        return TrainResult(loss=total_loss / total_tokens)
-
-    def eval_one_epoch(
-        self, epoch: int, external_loader: DataLoader | None = None
-    ) -> EvalResult:
-        loader = external_loader if external_loader is not None else self.val_loader
+        Returns:
+            Evaluator sharing this model, criterion, and validation metrics.
+        """
         return BertEvaluation(
             model=self.model,
             metrics=self.metrics,
             device=self.device,
             criterion=self.criterion,
             word_decoder=self.word_decoder,
-        ).evaluate(loader, epoch)
+        )
 
-    def train(self) -> pd.DataFrame:
-        self.model.to(self.device)
+    def callbacks(self) -> tuple[TrainingCallback, ...]:
+        """Configure history writing and optional validation diagnostics.
 
-        best_f1 = -1.0
-        best_state = None
-        history = []
+        Returns:
+            Ordered callbacks enabled by the artifact and inspector configuration.
 
-        progress_bar = tqdm(range(1, self.epochs + 1), position=0, leave=True)
-        for epoch in progress_bar:
-            progress_bar.set_description(f"Train model {epoch}/{self.epochs}")
-            train_metrics = self.train_one_epoch(epoch=epoch)
-
-            validation_metrics = self.eval_one_epoch(epoch=epoch)
-
-            epoch_metrics = {
-                "epoch": epoch,
-                "train_loss": train_metrics.loss,
-                **{
-                    f"validation_{key}": value
-                    for key, value in asdict(validation_metrics).items()
-                    if key != "per_entity"
-                },
-            }
-
-            history.append(epoch_metrics)
-
-            logger.info(
-                "Train / eval results",
-                epoch=f"{epoch}/{self.epochs}",
-                train_loss=train_metrics.loss,
-                val_loss=validation_metrics.loss,
-                val_f1=validation_metrics.f1,
-            )
-            if (
-                self.inspector is not None
-                and self.artifacts is not None
-                and self.artifacts.diagnostics_dir is not None
-            ):
-                self.inspector.run(
-                    self.validation_records,
-                    artifacts=self.artifacts.diagnostics(epoch),
-                    epoch=epoch,
-                )
-
-            if validation_metrics.f1 > best_f1:
-                best_f1 = validation_metrics.f1
-
-                # Copy the tensors; state_dict() alone shares model storage.
-                best_state = {
-                    key: value.detach().cpu().clone()
-                    for key, value in self.model.state_dict().items()
-                }
-
-        if best_state is not None:
-            self.model.load_state_dict(best_state)
-        history_df = pd.DataFrame(history)
-
-        return history_df
+        Raises:
+            ValueError: Diagnostics are enabled without validation records.
+        """
+        checkpoint = (self.checkpoint_writer,) if self.checkpoint_writer else ()
+        if self.artifacts is None:
+            return checkpoint
+        history = HistoryWriter(self.artifacts)
+        if self.inspector is None or self.artifacts.diagnostics_dir is None:
+            return (*checkpoint, history)
+        if self.validation_records is None:
+            raise ValueError("validation_records are required for diagnostics")
+        return (
+            *checkpoint,
+            history,
+            DiagnosticsWriter(self.inspector, self.artifacts, self.validation_records),
+        )

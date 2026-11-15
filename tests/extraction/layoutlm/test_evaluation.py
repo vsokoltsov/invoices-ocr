@@ -9,9 +9,9 @@ from app.extraction.layoutlm.builder import InvoiceBuilder
 from app.extraction.layoutlm.converter import AttachmentToImageConverter
 from app.extraction.layoutlm.dataset import InvoiceDataset
 from app.extraction.layoutlm.model import LayoutLMFieldExtractor
-from app.extraction.layoutlm.schema import InvoiceLabelSchema
+from app.extraction.results import TrainingResult
+from app.extraction.schema import InvoiceLabelSchema
 from app.pipelines.layoutlm.evaluate import EvaluateTraining
-from app.pipelines.layoutlm.training import TrainingResult
 
 
 def test_test_step_loads_saved_weights_without_live_trainer(
