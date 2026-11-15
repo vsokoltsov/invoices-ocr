@@ -9,6 +9,7 @@ from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
 
 from app.extraction.bert.pytorch.decoding import OCRWordDecoder
+from app.extraction.bert.pytorch.evaluation import BertEvaluation
 from app.extraction.bert.pytorch.inspector import EntityErrorInspector
 from app.extraction.bert.pytorch.metrics import EvalMetrics, EvalResult
 from app.extraction.enums import IGNORE_INDEX
@@ -89,52 +90,17 @@ class OCRInvoiceTraining:
 
         return TrainResult(loss=total_loss / total_tokens)
 
-    @torch.inference_mode()
-    def eval_one_epoch(self, epoch: int) -> EvalResult:
-        self.model.eval()
-
-        self.metrics.reset()
-
-        progress_bar = tqdm(
-            self.val_loader, position=1, desc=f"Eval epoch {epoch}", leave=False
-        )
-        for batch in progress_bar:
-            metadata = batch.get("decoder_metadata")
-            batch = {
-                key: value for key, value in batch.items() if key != "decoder_metadata"
-            }
-            batch = {key: value.to(self.device) for key, value in batch.items()}
-            targets = batch["labels"]
-            valid = targets != IGNORE_INDEX
-            valid_tokens = int(valid.sum().item())
-            if valid_tokens == 0:
-                continue
-
-            logits = self.model(
-                input_ids=batch["input_ids"],
-                attention_mask=batch["attention_mask"],
-            )
-            loss = self.criterion(
-                logits.reshape(-1, logits.shape[-1]),
-                targets.reshape(-1),
-            )
-
-            predictions = logits.argmax(dim=-1)
-            if self.word_decoder is not None:
-                if metadata is None:
-                    raise ValueError("OCR-word evaluation requires decoding metadata")
-                for index, item in enumerate(metadata):
-                    length = len(item["offsets"])
-                    predictions[index, :length] = torch.tensor(
-                        self.word_decoder.decode(
-                            logits[index, :length], item["offsets"], item["words"]
-                        ),
-                        device=self.device,
-                    )
-
-            self.metrics.update(logits, targets, loss, predictions=predictions)
-
-        return self.metrics.compute()
+    def eval_one_epoch(
+        self, epoch: int, external_loader: DataLoader | None = None
+    ) -> EvalResult:
+        loader = external_loader if external_loader is not None else self.val_loader
+        return BertEvaluation(
+            model=self.model,
+            metrics=self.metrics,
+            device=self.device,
+            criterion=self.criterion,
+            word_decoder=self.word_decoder,
+        ).evaluate(loader, epoch)
 
     def train(self) -> pd.DataFrame:
         self.model.to(self.device)

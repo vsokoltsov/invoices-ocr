@@ -137,6 +137,13 @@ def test_training_rejects_nonpositive_epoch_count():
         make_trainer(epochs=0)
 
 
+def test_external_evaluation_loader_does_not_replace_validation_loader():
+    trainer = make_trainer()
+    external_loader = make_trainer(labels=(0, 0, 0)).val_loader
+    assert trainer.eval_one_epoch(1, external_loader=external_loader).f1 == 0
+    assert trainer.eval_one_epoch(1).f1 == 1
+
+
 def test_word_decoding_changes_metrics_without_changing_loss_or_padding(fast_tokenizer):
     trainer = make_trainer()
     examples = [
