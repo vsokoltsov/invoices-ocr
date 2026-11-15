@@ -2,6 +2,7 @@ from enum import StrEnum
 
 IGNORE_INDEX = -100
 
+
 class InvoiceField(StrEnum):
     INVOICE_CLIENT_ADDRESS = "invoice.client_address"
     INVOICE_CLIENT_NAME = "invoice.client_name"
