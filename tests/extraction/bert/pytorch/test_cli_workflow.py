@@ -30,8 +30,6 @@ def test_prepared_dataset_can_train_offline_with_csv_history(
     monkeypatch.chdir(tmp_path)
     settings = Settings(
         _env_file=None,
-        DATA_PATH="unused",
-        DEBUG_ARTIFACTS_PATH="unused",
         DOCILE_TOKEN="unused",
     )
     monkeypatch.setattr(cli, "get_settings", lambda: settings)
@@ -162,9 +160,7 @@ def test_docile_cli_download_and_training_use_shared_dataset(
     line_items_only,
 ):
     monkeypatch.chdir(tmp_path)
-    settings = Settings(
-        _env_file=None, DATA_PATH="unused", DEBUG_ARTIFACTS_PATH="unused"
-    )
+    settings = Settings(_env_file=None)
     monkeypatch.setattr(cli, "get_settings", lambda: settings)
     output = tmp_path / "docile.parquet"
     cli.main(
