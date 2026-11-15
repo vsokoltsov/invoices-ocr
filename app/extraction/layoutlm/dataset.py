@@ -4,8 +4,8 @@ from tqdm.auto import tqdm
 from transformers.image_processing_utils import BaseImageProcessor
 from transformers.tokenization_utils_tokenizers import TokenizersBackend
 
+from app.extraction.enums import IGNORE_INDEX
 from app.extraction.layoutlm.converter import AttachmentToImageConverter
-from app.extraction.layoutlm.enums import IGNORE_INDEX
 
 
 class InvoiceDataset(Dataset):

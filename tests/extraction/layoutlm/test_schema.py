@@ -1,28 +1,41 @@
 import pytest
 
-from app.extraction.layoutlm.enums import FIELD_TO_ENTITY
+from app.extraction.bert.pytorch.schema import InvoiceLabelSchema as BertLabelSchema
+from app.extraction.enums import FIELD_TO_ENTITY
 from app.extraction.layoutlm.schema import InvoiceLabelSchema
 
 
-def test_default_schema_defines_five_fields_and_bio_labels():
+def test_default_schema_uses_shared_fields_and_bio_labels():
     schema = InvoiceLabelSchema()
-    assert schema.num_labels == 11
+    assert schema.num_labels == 19
     assert schema.field_to_entity == FIELD_TO_ENTITY
     assert schema.labels == (
         "O",
+        "B-CLIENT_ADDRESS",
+        "I-CLIENT_ADDRESS",
+        "B-CLIENT_NAME",
+        "I-CLIENT_NAME",
+        "B-SELLER_ADDRESS",
+        "I-SELLER_ADDRESS",
+        "B-SELLER_NAME",
+        "I-SELLER_NAME",
         "B-INVOICE_NUMBER",
         "I-INVOICE_NUMBER",
         "B-INVOICE_DATE",
         "I-INVOICE_DATE",
-        "B-DUE_DATE",
-        "I-DUE_DATE",
-        "B-SELLER_NAME",
-        "I-SELLER_NAME",
-        "B-CLIENT_NAME",
-        "I-CLIENT_NAME",
+        "B-ACCOUNT_NUMBER",
+        "I-ACCOUNT_NUMBER",
+        "B-TAX",
+        "I-TAX",
+        "B-TOTAL",
+        "I-TOTAL",
     )
     assert schema.label2id["O"] == 0
-    assert schema.id2label[10] == "I-CLIENT_NAME"
+    assert schema.id2label[18] == "I-TOTAL"
+    assert schema.field_to_entity is not FIELD_TO_ENTITY
+    bert_schema = BertLabelSchema()
+    assert schema.field_to_entity == bert_schema.field_to_entity
+    assert schema.label2id == bert_schema.label2id
 
 
 def test_custom_schema_keeps_order_and_copies_input():

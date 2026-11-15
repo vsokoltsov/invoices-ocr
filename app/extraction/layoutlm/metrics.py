@@ -3,7 +3,7 @@ from dataclasses import dataclass
 
 import torch
 
-from app.extraction.layoutlm.enums import IGNORE_INDEX
+from app.extraction.enums import IGNORE_INDEX
 
 
 @dataclass(frozen=True, slots=True)

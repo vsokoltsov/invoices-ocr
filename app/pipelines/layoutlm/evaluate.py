@@ -6,7 +6,7 @@ import torch
 from torch import nn
 from torch.utils.data import DataLoader
 
-from app.extraction.layoutlm.enums import IGNORE_INDEX
+from app.extraction.enums import IGNORE_INDEX
 from app.extraction.layoutlm.evaluation import LayoutLMEvaluation
 from app.extraction.layoutlm.metrics import EpochMetrics
 from app.extraction.layoutlm.model import LayoutLMFieldExtractor

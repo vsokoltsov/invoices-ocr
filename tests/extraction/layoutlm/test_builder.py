@@ -5,8 +5,8 @@ from types import SimpleNamespace
 import pandas as pd
 import pytest
 
+from app.extraction.enums import FIELD_TO_ENTITY
 from app.extraction.layoutlm.builder import InvoiceBuilder
-from app.extraction.layoutlm.enums import FIELD_TO_ENTITY
 from app.extraction.layoutlm.schema import InvoiceLabelSchema
 
 

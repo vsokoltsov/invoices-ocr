@@ -5,10 +5,10 @@ import pytest
 import torch
 from torch.utils.data import DataLoader
 
+from app.extraction.enums import FIELD_TO_ENTITY
 from app.extraction.layoutlm.builder import InvoiceBuilder
 from app.extraction.layoutlm.converter import AttachmentToImageConverter
 from app.extraction.layoutlm.dataset import InvoiceDataset
-from app.extraction.layoutlm.enums import FIELD_TO_ENTITY
 
 
 def test_encoding_preserves_word_alignment_and_caches_float_images(
