@@ -3,7 +3,6 @@ from functools import lru_cache
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from app.aggregates.bert.params import DatasetName
 from app.aggregates.layoutlm.params import LayoutLMDevice
 from app.datasets.docile.enums import DocileSplit
 
@@ -78,8 +77,8 @@ class BertPytorchConfig(BaseSettings):
     )
 
     DATASET_PATH: str = Field(
-        default="./data/raw/kaggle-invoices.csv",
-        description="Existing prepared CSV or DocILE Parquet; fail if it is missing.",
+        default="./data/raw/docile.parquet",
+        description="Prepared DocILE Parquet containing OCR words and annotations.",
     )
     RESULT_FILENAME: str = Field(
         default="bert_training_pipeline",
@@ -97,17 +96,13 @@ class BertPytorchConfig(BaseSettings):
         default=False,
         description="Train only DocILE item descriptions, quantities, gross unit prices, and gross amounts.",
     )
-    BODY_ONLY: bool = Field(
-        default=False,
-        description="Train only invoice fields, without the line-item model.",
-    )
     MODEL_NAME: str = Field(
         default="google-bert/bert-base-uncased",
         description="Hugging Face checkpoint used to initialize the token-classification model.",
     )
     BATCH_SIZE: int = Field(
         default=16,
-        description="Number of documents processed in one dataset-encoding batch.",
+        description="Token windows per training or evaluation batch.",
     )
     NUM_EPOCH: int = Field(
         default=5,
@@ -242,7 +237,6 @@ class Settings(BaseSettings):
     KAGGLE_INVOICES: KaggleInvoicesConfig = Field(default_factory=KaggleInvoicesConfig)
     DOCILE: DocileInvoicesConfig = Field(default_factory=DocileInvoicesConfig)
     RANDOM_SEED: int = 42
-    DATASET_NAME: DatasetName = DatasetName.KAGGLE_INVOICES
     DOCILE_TOKEN: str = Field(default="", repr=False)
 
 

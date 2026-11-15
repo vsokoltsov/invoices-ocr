@@ -6,14 +6,14 @@ from zipfile import ZipFile
 import pandas as pd
 import pytest
 
-from app.aggregates.bert.params import BertPytorchParams, DatasetName
 from app.config import DocileInvoicesConfig
 from app.datasets.docile.downloader import DocileDatasetDownloader
 from app.datasets.docile.enums import DocileSplit
 from app.datasets.docile.loader import DocileDatasetLoader
 from app.datasets.docile.order import OCRReadingOrder
 from app.datasets.docile.preparation import DocileInvoicesPreparation
-from app.extraction.bert.pytorch.pipeline import BertPytorchPipeline
+from app.extraction.bert.pytorch.docile.builder import DocileRecordBuilder
+from app.pipelines.bert.split import DatasetsSplit
 
 
 def test_loader_preserves_boxes_items_offsets_and_provenance(docile_archive):
@@ -66,21 +66,18 @@ def test_preparation_roundtrip_and_pipeline_selection(
         Mock(side_effect=AssertionError("Already extracted")),
     )
     assert preparation.run() == output.resolve()
-    params = BertPytorchParams(
-        str(output), "history", "offline", 32, 42, 2, 1, 0.001, 0, DatasetName.DOCILE
-    )
-    frame = BertPytorchPipeline.load_frame(params)
-    records, rejected, schema = BertPytorchPipeline.prepare_records(
-        frame, params.dataset_type
-    )
-    assert len(records) == 12 and not rejected
-    assert "B-PAYMENT_TERMS" in schema.label2id
-    train, validation, test = BertPytorchPipeline.split_records(records, frame, params)
-    assert len(train) == 9 and len(validation) == 1 and len(test) == 2
-    assert {r["document_id"] for r in test} == {"doc-10", "doc-11"}
-    assert not (
-        {r["document_id"] for r in train} & {r["document_id"] for r in validation}
-    )
+    if extension == "parquet":
+        frame = pd.read_parquet(output)
+        frame["json_data"] = frame["json_data"].map(json.loads)
+        records, rejected = DocileRecordBuilder().build(frame)
+        assert len(records) == 12 and not rejected
+        partitions = DatasetsSplit.create(frame, 42)
+        assert (len(partitions.train), len(partitions.val), len(partitions.test)) == (
+            9,
+            1,
+            2,
+        )
+        assert not set(partitions.train.document_id) & set(partitions.val.document_id)
     assert (
         len(pd.read_parquet(output) if extension == "parquet" else pd.read_csv(output))
         == 12

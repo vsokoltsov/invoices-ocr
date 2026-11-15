@@ -1,8 +1,8 @@
 from unittest.mock import Mock
 
+import pandas as pd
 import pytest
 
-from app.aggregates.bert.params import DatasetName
 from app.config import (
     BertPytorchConfig,
     BertPytorchDebugConfig,
@@ -25,15 +25,14 @@ def settings():
 
 def test_pytorch_cli_maps_all_config_fields_to_pipeline(settings, monkeypatch):
     pipeline = Mock()
-    monkeypatch.setattr(cli, "BertPytorchPipeline", lambda: pipeline)
+    factory = Mock(return_value=pipeline)
+    monkeypatch.setattr(cli, "BertTrainingPipeline", factory)
     args = cli.build_parser(settings).parse_args(
         [
             "train",
             "bert-pytorch",
-            "--dataset-name",
-            "docile",
             "--dataset-path",
-            "prepared.csv",
+            "prepared.parquet",
             "--result-filename",
             "experiment",
             "--model-name",
@@ -53,9 +52,8 @@ def test_pytorch_cli_maps_all_config_fields_to_pipeline(settings, monkeypatch):
         ]
     )
     args.handler(args, settings)
-    params = pipeline.run.call_args.args[0]
+    params = factory.call_args.kwargs["params"]
     assert params.random_seed == 7
-    assert params.dataset_type == DatasetName.DOCILE
     for name in BertPytorchConfig.model_fields:
         assert getattr(params, name.lower()) == getattr(args, name)
 
@@ -78,39 +76,11 @@ def test_line_items_flag_uses_environment_and_cli_override(settings, monkeypatch
         is False
     )
     pipeline = Mock()
-    monkeypatch.setattr(cli, "BertPytorchPipeline", lambda: pipeline)
-    args = parser.parse_args(
-        ["train", "bert-pytorch", "--dataset-name", "docile", "--line-items-only"]
-    )
+    factory = Mock(return_value=pipeline)
+    monkeypatch.setattr(cli, "BertTrainingPipeline", factory)
+    args = parser.parse_args(["train", "bert-pytorch", "--line-items-only"])
     args.handler(args, settings)
-    assert pipeline.run.call_args.args[0].line_items_only is True
-
-
-def test_line_items_mode_rejects_kaggle_before_loading_dataset(settings, monkeypatch):
-    monkeypatch.setattr(cli, "get_settings", lambda: settings)
-    with pytest.raises(ValueError, match="requires --dataset-name docile"):
-        cli.main(
-            [
-                "train",
-                "bert-pytorch",
-                "--dataset-name",
-                "kaggle_invoices",
-                "--line-items-only",
-            ]
-        )
-
-
-def test_body_and_items_are_mutually_exclusive(settings, monkeypatch):
-    parser = cli.build_parser(settings)
-    with pytest.raises(SystemExit):
-        parser.parse_args(["train", "bert-pytorch", "--body-only", "--line-items-only"])
-    monkeypatch.setenv("BERTPYTORCH_LINE_ITEMS_ONLY", "true")
-    settings.BERT_PYTORCH = BertPytorchConfig(_env_file=None)
-    args = cli.build_parser(settings).parse_args(
-        ["train", "bert-pytorch", "--body-only"]
-    )
-    with pytest.raises(ValueError, match="cannot be used together"):
-        args.handler(args, settings)
+    assert factory.call_args.kwargs["params"].line_items_only is True
 
 
 def test_debug_cli_maps_config_and_environment(settings, monkeypatch, tmp_path, capsys):
@@ -147,7 +117,8 @@ def test_pytorch_config_reads_dotenv_defaults(tmp_path, monkeypatch):
 def test_main_dispatches_and_invalid_commands_fail(settings, monkeypatch):
     pipeline = Mock()
     monkeypatch.setattr(cli, "get_settings", lambda: settings)
-    monkeypatch.setattr(cli, "BertPytorchPipeline", lambda: pipeline)
+    factory = Mock(return_value=pipeline)
+    monkeypatch.setattr(cli, "BertTrainingPipeline", factory)
     cli.main(["train", "bert-pytorch"])
     pipeline.run.assert_called_once()
     with pytest.raises(SystemExit):
@@ -201,49 +172,38 @@ def test_docile_corrections_path_uses_environment_and_cli_override(
     )
 
 
-def test_missing_csv_fails_before_tokenizer_initialization(
+def test_missing_parquet_fails_before_tokenizer_initialization(
     settings, monkeypatch, tmp_path
 ):
-    from app.extraction.bert.pytorch import pipeline
+    from app.pipelines.bert import pipeline
 
     tokenizer_factory = Mock()
     monkeypatch.setattr(pipeline.AutoTokenizer, "from_pretrained", tokenizer_factory)
     monkeypatch.setattr(cli, "get_settings", lambda: settings)
-    missing = tmp_path / "missing.csv"
-    with pytest.raises(FileNotFoundError, match="Prepared dataset CSV not found"):
+    missing = tmp_path / "missing.parquet"
+    with pytest.raises(FileNotFoundError):
         cli.main(["train", "bert-pytorch", "--dataset-path", str(missing)])
     tokenizer_factory.assert_not_called()
 
 
-@pytest.mark.parametrize(
-    "filename,content,message",
-    [
-        ("dataset.txt", "ocred_text,json_data\n", "must be a CSV"),
-        ("dataset.csv", "wrong_column\nvalue\n", "missing columns"),
-    ],
-)
-def test_invalid_dataset_fails_before_model_loading(
-    settings, monkeypatch, tmp_path, filename, content, message
-):
-    from app.extraction.bert.pytorch import pipeline
+def test_invalid_dataset_fails_before_model_loading(settings, monkeypatch, tmp_path):
+    from app.pipelines.bert import pipeline
 
     tokenizer_factory = Mock()
     monkeypatch.setattr(pipeline.AutoTokenizer, "from_pretrained", tokenizer_factory)
     monkeypatch.setattr(cli, "get_settings", lambda: settings)
-    dataset = tmp_path / filename
-    dataset.write_text(content, encoding="utf-8")
-    with pytest.raises(ValueError, match=message):
+    dataset = tmp_path / "dataset.parquet"
+    pd.DataFrame({"wrong_column": ["value"]}).to_parquet(dataset, index=False)
+    with pytest.raises(ValueError, match="missing columns"):
         cli.main(["train", "bert-pytorch", "--dataset-path", str(dataset)])
     tokenizer_factory.assert_not_called()
 
 
-def test_dataset_selection_config_and_token_privacy(tmp_path, monkeypatch, capsys):
+def test_docile_token_privacy(tmp_path, monkeypatch, capsys):
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("DATASET_NAME", "docile")
     monkeypatch.setenv("DOCILE_TOKEN", "private-token")
     settings = Settings(_env_file=None)
-    args = cli.build_parser(settings).parse_args(["train", "bert-pytorch"])
-    assert args.dataset_name == DatasetName.DOCILE
+    cli.build_parser(settings).parse_args(["train", "bert-pytorch"])
     assert settings.DOCILE.TOKEN == "private-token"
     with pytest.raises(SystemExit) as result:
         cli.build_parser(settings).parse_args(

@@ -6,7 +6,6 @@ from pathlib import Path
 from app.aggregates.bert.params import (
     BertPytorchDebugParams,
     BertPytorchParams,
-    DatasetName,
 )
 from app.aggregates.layoutlm.params import LayoutLMTrainingParams
 from app.config import (
@@ -23,7 +22,7 @@ from app.datasets.docile.preparation import DocileInvoicesPreparation
 from app.datasets.kaggle_invoices.downloader import InvoiceDatasetDownloader
 from app.datasets.kaggle_invoices.preparation import KaggleInvoicesPreparation
 from app.extraction.bert.pytorch.debug import BertPytorchDebugPipeline
-from app.extraction.bert.pytorch.pipeline import BertPytorchPipeline
+from app.pipelines.bert.pipeline import BertTrainingPipeline
 
 
 def option_name(field_name: str) -> str:
@@ -65,8 +64,6 @@ def add_config_options(
 
 
 def train_bert_pytorch(args: argparse.Namespace, settings: Settings) -> None:
-    if args.BODY_ONLY and args.LINE_ITEMS_ONLY:
-        raise ValueError("--body-only and --line-items-only cannot be used together")
     params = BertPytorchParams(
         dataset_path=args.DATASET_PATH,
         result_filename=args.RESULT_FILENAME,
@@ -77,13 +74,11 @@ def train_bert_pytorch(args: argparse.Namespace, settings: Settings) -> None:
         num_epoch=args.NUM_EPOCH,
         learning_rate=args.LEARNING_RATE,
         weight_decay=args.WEIGHT_DECAY,
-        dataset_type=DatasetName(args.dataset_name),
         diagnostic_dir=args.DIAGNOSTIC_DIR,
         checkpoint_dir=args.CHECKPOINT_DIR,
         line_items_only=args.LINE_ITEMS_ONLY,
-        body_only=args.BODY_ONLY,
     )
-    BertPytorchPipeline().run(params)
+    BertTrainingPipeline(params=params).run()
 
 
 def train_layoutlm(args: argparse.Namespace, settings: Settings) -> None:
@@ -163,26 +158,7 @@ def build_parser(settings: Settings) -> argparse.ArgumentParser:
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     pytorch.add_argument("--random-seed", type=int, default=settings.RANDOM_SEED)
-    pytorch.add_argument(
-        "--dataset-name",
-        type=DatasetName,
-        choices=list(DatasetName),
-        default=settings.DATASET_NAME,
-        help="Select dataset-specific loading, labels, and span preparation.",
-    )
-    add_config_options(
-        pytorch, settings.BERT_PYTORCH, exclude=("BODY_ONLY", "LINE_ITEMS_ONLY")
-    )
-    targets = pytorch.add_mutually_exclusive_group()
-    add_config_options(
-        targets,
-        settings.BERT_PYTORCH,
-        exclude=tuple(
-            name
-            for name in BertPytorchConfig.model_fields
-            if name not in {"BODY_ONLY", "LINE_ITEMS_ONLY"}
-        ),
-    )
+    add_config_options(pytorch, settings.BERT_PYTORCH)
     pytorch.set_defaults(handler=train_bert_pytorch)
 
     layoutlm = models.add_parser(
