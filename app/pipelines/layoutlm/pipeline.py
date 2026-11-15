@@ -15,7 +15,7 @@ from app.extraction.layoutlm.builder import InvoiceBuilder
 from app.extraction.layoutlm.converter import AttachmentToImageConverter
 from app.extraction.layoutlm.model import LayoutLMFieldExtractor
 from app.extraction.layoutlm.publisher import ClearMLPublisher
-from app.extraction.layoutlm.schema import InvoiceLabelSchema
+from app.extraction.schema import InvoiceLabelSchema
 from app.pipelines.layoutlm.builder import BuildInvoices
 from app.pipelines.layoutlm.dataloader import InvoiceDataLoaders
 from app.pipelines.layoutlm.evaluate import EvaluateTraining

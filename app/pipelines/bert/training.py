@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-from pathlib import Path
 
 import pandas as pd
 import torch
@@ -8,27 +7,37 @@ from torch.utils.data import DataLoader
 from transformers.tokenization_utils_tokenizers import TokenizersBackend
 
 from app.extraction.bert.artifacts import BertArtifacts
-from app.extraction.bert.checkpoint import BertPytorchCheckpoint
+from app.extraction.bert.checkpoint import BertEvaluationRecords, BertPytorchCheckpoint
 from app.extraction.bert.decoding import OCRWordDecoder
 from app.extraction.bert.inspector import EntityErrorInspector
 from app.extraction.bert.model import BertFieldExtractor
-from app.extraction.bert.schema import InvoiceLabelSchema
 from app.extraction.bert.training import OCRInvoiceTraining
 from app.extraction.enums import IGNORE_INDEX
+from app.extraction.results import TrainingResult
+from app.extraction.schema import InvoiceLabelSchema
+from app.extraction.training import BestCheckpointWriter
 from app.pipelines.bert.builder import BuildResult
 from app.pipelines.bert.split import DatasetsSplit
 
 
-@dataclass(frozen=True)
-class TrainingResult:
-    """Paths to the checkpoint directory and scalar training history."""
-
-    checkpoint_path: Path
-    history_path: Path
-
-
 @dataclass
 class BertTraining:
+    """Configure BERT optimization and package the selected best model.
+
+    Attributes:
+        model: BERT token classifier.
+        schema: Shared invoice label schema.
+        tokenizer: Fast tokenizer saved with the checkpoint.
+        device: Execution device.
+        epochs: Number of training epochs.
+        learning_rate: AdamW learning rate.
+        weight_decay: AdamW weight decay.
+        artifacts: Checkpoint, history, and diagnostic storage.
+        max_length_tokens: Token window length saved for later evaluation.
+        inspector: Optional validation diagnostics.
+        word_decoder: Optional OCR-word decoder used for validation.
+    """
+
     model: BertFieldExtractor
     schema: InvoiceLabelSchema
     tokenizer: TokenizersBackend
@@ -47,6 +56,19 @@ class BertTraining:
         build_result: BuildResult,
         split: DatasetsSplit,
     ) -> TrainingResult:
+        """Train BERT and save checkpoints on validation score improvements.
+
+        Each improved validation F1 saves a checkpoint before the next epoch.
+        The model is moved to the CPU when training or serialization exits.
+
+        Args:
+            dataloaders: Training and validation loaders.
+            build_result: Prepared split records, including validation and test inputs.
+            split: Source frames used to retain original OCR offsets.
+
+        Returns:
+            Checkpoint directory and per-epoch history path.
+        """
         validation_records = build_result.records.val.to_dict(orient="records")
         trainer = OCRInvoiceTraining(
             model=self.model,
@@ -65,22 +87,29 @@ class BertTraining:
             artifacts=self.artifacts,
             validation_records=validation_records,
             word_decoder=self.word_decoder,
+            checkpoint_writer=BestCheckpointWriter(
+                BertPytorchCheckpoint(
+                    artifacts=self.artifacts,
+                    encoder_config=self.model.bert.config,
+                    tokenizer=self.tokenizer,
+                    evaluation_records=BertEvaluationRecords(
+                        artifacts=self.artifacts,
+                        schema=self.schema,
+                        records={
+                            "validation": validation_records,
+                            "test": build_result.records.test.to_dict(orient="records"),
+                        },
+                        frame=pd.concat((split.train, split.val, split.test)),
+                        max_length=self.max_length_tokens,
+                        decoder="ocr_word"
+                        if self.word_decoder is not None
+                        else "token_argmax",
+                    ),
+                ),
+            ),
         )
         try:
-            history = trainer.train()
-            self.artifacts.save_history(history)
-            best_epoch = int(history.loc[history["validation_f1"].idxmax(), "epoch"])
-            BertPytorchCheckpoint(self.artifacts).save(
-                self.model,
-                self.tokenizer,
-                self.schema,
-                validation_records,
-                pd.concat((split.train, split.val, split.test)),
-                epoch=best_epoch,
-                max_length=self.max_length_tokens,
-                test_records=build_result.records.test.to_dict(orient="records"),
-                decoder="ocr_word" if self.word_decoder is not None else "token_argmax",
-            )
+            trainer.train()
         finally:
             self.model.to("cpu")
         return TrainingResult(

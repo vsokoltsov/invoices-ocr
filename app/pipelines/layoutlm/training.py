@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-from pathlib import Path
 
 import torch
 from torch import nn
@@ -10,18 +9,26 @@ from app.extraction.enums import IGNORE_INDEX
 from app.extraction.layoutlm.artifacts import LayoutLMArtifacts
 from app.extraction.layoutlm.metrics import EpochMetrics
 from app.extraction.layoutlm.model import LayoutLMFieldExtractor
-from app.extraction.layoutlm.schema import InvoiceLabelSchema
 from app.extraction.layoutlm.training import OCRInvoiceTraining
-
-
-@dataclass(frozen=True)
-class TrainingResult:
-    checkpoint_path: Path
-    history_path: Path
+from app.extraction.results import TrainingResult
+from app.extraction.schema import InvoiceLabelSchema
 
 
 @dataclass
 class LayoutLMTraining:
+    """Configure LayoutLM optimization, scheduling, and run storage.
+
+    Attributes:
+        model: LayoutLM token classifier.
+        schema: Shared invoice label schema.
+        device: Execution device.
+        epochs: Number of training epochs.
+        learning_rate: AdamW learning rate.
+        weight_decay: Decay applied to trainable parameters with two or more dimensions.
+        warmup_ratio: Fraction of planned optimizer steps used for linear warmup.
+        artifacts: Storage for history and best.pt.
+    """
+
     model: LayoutLMFieldExtractor
     schema: InvoiceLabelSchema
     device: torch.device
@@ -32,6 +39,18 @@ class LayoutLMTraining:
     artifacts: LayoutLMArtifacts
 
     def train(self, dataloaders: dict[str, DataLoader]) -> TrainingResult:
+        """Train LayoutLM with AdamW and linear warmup/decay.
+
+        Separates parameters by dimensionality to exclude biases and normalization
+        weights from decay. The trainer saves improved weights through its callback.
+        The model moves to the CPU on success or failure.
+
+        Args:
+            dataloaders: Training and validation loaders.
+
+        Returns:
+            Best-checkpoint and per-epoch history paths.
+        """
         decay, no_decay = [], []
         for parameter in self.model.parameters():
             if parameter.requires_grad:

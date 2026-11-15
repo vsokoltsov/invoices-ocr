@@ -7,7 +7,7 @@ from transformers.tokenization_utils_tokenizers import TokenizersBackend
 
 from app.extraction.bert.collation import InvoiceDataCollator
 from app.extraction.bert.datasets import InvoiceDataset
-from app.extraction.bert.schema import InvoiceLabelSchema
+from app.extraction.schema import InvoiceLabelSchema
 from app.pipelines.bert.builder import BuildResult
 
 
