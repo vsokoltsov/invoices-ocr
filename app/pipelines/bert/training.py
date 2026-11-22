@@ -17,7 +17,7 @@ from app.extraction.enums import IGNORE_INDEX
 from app.extraction.results import TrainingResult
 from app.extraction.schema import InvoiceLabelSchema
 from app.extraction.training import BestCheckpointWriter
-from app.pipelines.builder import BuildResult
+from app.pipelines.preprocess import PreprocessResult
 from app.pipelines.training import TrainingRun
 
 
@@ -54,7 +54,7 @@ class BertTraining:
     def train(
         self,
         dataloaders: dict[str, DataLoader],
-        build_result: BuildResult,
+        preprocess_result: PreprocessResult,
         split: DatasetsSplit,
     ) -> TrainingResult:
         """Train BERT and save checkpoints on validation score improvements.
@@ -64,13 +64,13 @@ class BertTraining:
 
         Args:
             dataloaders: Training and validation loaders.
-            build_result: Prepared split records, including validation and test inputs.
+            preprocess_result: Prepared split records, including validation and test inputs.
             split: Source frames used to retain original OCR offsets.
 
         Returns:
             Checkpoint directory and per-epoch history path.
         """
-        validation_records = build_result.records.val.to_dict(orient="records")
+        validation_records = preprocess_result.records.val.to_dict(orient="records")
         trainer = OCRInvoiceTraining(
             model=self.model,
             optimizer=torch.optim.AdamW(
@@ -98,7 +98,9 @@ class BertTraining:
                         schema=self.schema,
                         records={
                             "validation": validation_records,
-                            "test": build_result.records.test.to_dict(orient="records"),
+                            "test": preprocess_result.records.test.to_dict(
+                                orient="records"
+                            ),
                         },
                         frame=pd.concat((split.train, split.val, split.test)),
                         max_length=self.max_length_tokens,

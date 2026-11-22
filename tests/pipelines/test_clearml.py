@@ -185,8 +185,8 @@ def test_prepared_data_roundtrip_restores_nested_lists_and_rejection_details(tmp
     import pandas as pd
 
     from app.datasets.split import DatasetsSplit
-    from app.pipelines.builder import BuildResult
     from app.pipelines.clearml.artifacts import PreparedData
+    from app.pipelines.preprocess import PreprocessResult
 
     source = pd.DataFrame(
         {
@@ -213,7 +213,7 @@ def test_prepared_data_roundtrip_restores_nested_lists_and_rejection_details(tmp
     assert store.directory == tmp_path / "checkpoint-prepared"
     directory = store.save(
         DatasetsSplit(source, source, source),
-        BuildResult(
+        PreprocessResult(
             DatasetsSplit(records, records, records),
             DatasetsSplit(rejected, rejected, rejected),
         ),

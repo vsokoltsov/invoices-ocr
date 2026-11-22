@@ -1,4 +1,3 @@
-import json
 from dataclasses import asdict, dataclass
 from functools import cached_property
 from typing import cast
@@ -8,15 +7,15 @@ from transformers.tokenization_utils_tokenizers import TokenizersBackend
 
 from app.aggregates.bert.params import BertPytorchParams
 from app.extraction.bert.artifacts import BertArtifacts
-from app.extraction.bert.builder import InvoiceRecordBuilder
 from app.extraction.bert.collation import InvoiceDataCollator
 from app.extraction.bert.inspector import EntityErrorInspector
-from app.extraction.bert.item_builder import ItemRecordBuilder
+from app.extraction.bert.item_preprocess import ItemPreprocessor
 from app.extraction.bert.model import BertFieldExtractor
+from app.extraction.bert.preprocess import InvoicePreprocessor
 from app.extraction.bert.publisher import ClearMLPublisher
-from app.pipelines.bert.builder import InvoicesBuilder
 from app.pipelines.bert.dataloader import InvoiceDataLoader
 from app.pipelines.bert.evaluate import EvaluateTraining
+from app.pipelines.bert.preprocess import BertPreprocess
 from app.pipelines.bert.training import BertTraining
 from app.pipelines.components import ModelPipeline
 from app.pipelines.device import DeviceSelector
@@ -40,19 +39,15 @@ class BertTrainingPipeline(ModelPipeline):
         return self.params.random_seed
 
     def load_source(self):
-        """Load validated source documents and decode annotation JSON.
+        """Load and validate source documents without transforming their contents.
 
         Returns:
             Prepared DocILE source DataFrame.
         """
-        frame = DocileDataset(
+        return DocileDataset(
             self.params.dataset_path,
             frozenset({"document_id", "ocr_text", "text_with_boxes", "json_data"}),
         ).load()
-        frame["json_data"] = frame["json_data"].map(
-            lambda value: json.loads(value) if isinstance(value, str) else value
-        )
-        return frame
 
     @cached_property
     def device(self):
@@ -65,18 +60,16 @@ class BertTrainingPipeline(ModelPipeline):
         return BertArtifacts.from_params(self.params)
 
     @cached_property
-    def record_builder(self):
+    def record_preprocessor(self):
         """Select invoice or line-item record preparation for this model run."""
         return (
-            ItemRecordBuilder()
-            if self.params.line_items_only
-            else InvoiceRecordBuilder()
+            ItemPreprocessor() if self.params.line_items_only else InvoicePreprocessor()
         )
 
     @cached_property
     def schema(self):
-        """Return the schema associated with the selected record builder."""
-        return self.record_builder.label_schema
+        """Return the schema associated with the selected record preprocessor."""
+        return self.record_preprocessor.label_schema
 
     @cached_property
     def tokenizer(self):
@@ -110,9 +103,9 @@ class BertTrainingPipeline(ModelPipeline):
         )
 
     @cached_property
-    def build_step(self):
+    def preprocess_step(self):
         """Configure split record preparation without initializing model weights."""
-        return InvoicesBuilder(self.record_builder, self.artifacts)
+        return BertPreprocess(self.record_preprocessor, self.artifacts)
 
     @cached_property
     def loader_step(self):
@@ -172,15 +165,15 @@ class BertTrainingPipeline(ModelPipeline):
             )
         )
 
-    def train_prepared(self, dataloaders, build_result, split):
+    def train_prepared(self, dataloaders, preprocess_result, split):
         """Train from persisted preparation outputs.
 
         Args:
             dataloaders: Constructed split loaders.
-            build_result: Prepared span records and rejection reports.
+            preprocess_result: Prepared span records and rejection reports.
             split: Original document partitions used for OCR offsets.
 
         Returns:
             Saved best-checkpoint and history locations.
         """
-        return self.training_step.train(dataloaders, build_result, split)
+        return self.training_step.train(dataloaders, preprocess_result, split)

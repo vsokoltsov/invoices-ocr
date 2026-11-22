@@ -10,9 +10,9 @@ from app.datasets.split import DatasetsSplit
 from app.extraction.layoutlm.artifacts import LayoutLMArtifacts
 from app.extraction.metrics import TrainResult
 from app.extraction.results import TrainingResult
-from app.pipelines.builder import BuildResult
 from app.pipelines.dataloader import DataLoaders
 from app.pipelines.evaluate import EvaluateCheckpoint
+from app.pipelines.preprocess import PreprocessResult
 from app.pipelines.training import TrainingRun
 
 
@@ -34,7 +34,7 @@ def test_loaders_repeat_training_shuffle_keep_evaluation_order_and_use_collator(
         random_seed=17,
         collate_fn=collate_values,
     )
-    result = BuildResult(split, split)
+    result = PreprocessResult(split, split)
     first, second = step.build(result), step.build(result)
     order = torch.cat(list(first["train"]))
     assert torch.equal(order, torch.cat(list(second["train"])))
