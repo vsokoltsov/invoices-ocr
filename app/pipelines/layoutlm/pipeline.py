@@ -7,16 +7,16 @@ from transformers.tokenization_utils_tokenizers import TokenizersBackend
 
 from app.aggregates.layoutlm.params import LayoutLMTrainingParams
 from app.extraction.layoutlm.artifacts import LayoutLMArtifacts
-from app.extraction.layoutlm.builder import InvoiceBuilder
 from app.extraction.layoutlm.converter import AttachmentToImageConverter
 from app.extraction.layoutlm.model import LayoutLMFieldExtractor
+from app.extraction.layoutlm.preprocess import InvoicePreprocessor
 from app.extraction.layoutlm.publisher import ClearMLPublisher
 from app.extraction.schema import InvoiceLabelSchema
 from app.pipelines.components import ModelPipeline
 from app.pipelines.device import DeviceSelector
-from app.pipelines.layoutlm.builder import BuildInvoices
 from app.pipelines.layoutlm.dataloader import InvoiceDataLoaders
 from app.pipelines.layoutlm.evaluate import EvaluateTraining
+from app.pipelines.layoutlm.preprocess import LayoutLMPreprocess
 from app.pipelines.layoutlm.training import LayoutLMTraining
 from app.pipelines.loading import DocileDataset
 from app.pipelines.publish import PublishModel
@@ -110,10 +110,10 @@ class LayoutLMTrainingPipeline(ModelPipeline):
         ).to(self.device)
 
     @cached_property
-    def build_step(self):
+    def preprocess_step(self):
         """Configure page preparation without initializing training weights."""
-        return BuildInvoices(
-            InvoiceBuilder(
+        return LayoutLMPreprocess(
+            InvoicePreprocessor(
                 fields=self.schema.field_to_entity,
                 label2id=self.schema.label2id,
                 min_coverage=self.params.min_word_coverage,
@@ -158,12 +158,12 @@ class LayoutLMTrainingPipeline(ModelPipeline):
         """Configure LayoutLM artifact publication."""
         return PublishModel(ClearMLPublisher(self.artifacts))
 
-    def train_prepared(self, dataloaders, build_result, split):
+    def train_prepared(self, dataloaders, preprocess_result, split):
         """Train LayoutLM from persisted prepared page records.
 
         Args:
             dataloaders: Constructed split loaders.
-            build_result: Preparation outputs; already represented in the loaders.
+            preprocess_result: Preparation outputs; already represented in the loaders.
             split: Source partitions; page training uses the prepared records.
 
         Returns:
