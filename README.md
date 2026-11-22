@@ -22,13 +22,16 @@ and configuring `.env` from [`.env.sample`](.env.sample).
 
 | Command | Purpose |
 | --- | --- |
-| `uv run python -m commands.cli datasets download docile` | Download and prepare annotated DocILE documents. |
+| `uv run python -m commands.cli datasets download docile` | Download original DocILE ZIP archives. |
+| `uv run python -m commands.cli datasets load docile` | Save original DocILE OCR and annotations to raw Parquet. |
+| `uv run python -m commands.cli preprocess bert` | Export preprocessed DocILE documents to the BERT dataset path. |
+| `uv run python -m commands.cli preprocess layoutlm` | Export preprocessed DocILE documents to the LayoutLM dataset path. |
 | `uv run python -m commands.cli datasets cache-images docile` | Cache PDF page images for LayoutLM training. |
-| `uv run python -m commands.cli train bert-pytorch` | Train and evaluate BERT with the PyTorch training loop. |
+| `uv run python -m commands.cli train bert` | Train and evaluate BERT with the PyTorch training loop. |
 | `uv run python -m commands.cli train layoutlm` | Train LayoutLMv3, evaluate its best checkpoint, and publish artifacts to ClearML. |
 | `uv run --env-file .env python -m commands.cli pipeline bert` | Run BERT preparation, training, evaluation, and publication as separate ClearML tasks. |
 | `uv run --env-file .env python -m commands.cli pipeline layoutlm` | Run LayoutLM preparation, training, evaluation, and publication as separate ClearML tasks. |
-| `uv run python -m commands.cli debug bert-pytorch` | Compare token and OCR-word decoding for a saved checkpoint. |
+| `uv run python -m commands.cli debug bert` | Compare token and OCR-word decoding for a saved checkpoint. |
 
 See the [full CLI reference](https://github.com/vsokoltsov/invoices-ocr/blob/main/docs/cli.md)
 for every option, complete invocation examples, environment settings, and dataset
@@ -36,6 +39,9 @@ and training details.
 
 See the [metrics guide](docs/metrics.md) for score definitions and illustrated
 examples of how to interpret model results.
+
+See [preprocessing](docs/preprocessing.md) for the shared and model-specific
+PipeFunc steps and the download-to-training workflow.
 
 ## Development
 
