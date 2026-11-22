@@ -34,6 +34,9 @@ See the [full CLI reference](https://github.com/vsokoltsov/invoices-ocr/blob/mai
 for every option, complete invocation examples, environment settings, and dataset
 and training details.
 
+See the [metrics guide](docs/metrics.md) for score definitions and illustrated
+examples of how to interpret model results.
+
 ## Development
 
 Run the local checks:
