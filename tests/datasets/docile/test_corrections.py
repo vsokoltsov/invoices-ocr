@@ -10,8 +10,9 @@ from app.datasets.docile.converter import DocileAnnotationConverter
 from app.datasets.docile.corrections import DocileAnnotationCorrections
 from app.datasets.docile.downloader import DocileDatasetDownloader
 from app.datasets.docile.loader import DocileDatasetLoader
-from app.datasets.docile.preprocess import DocilePreprocess
+from app.datasets.docile.preprocess import DocileSource
 from app.extraction.bert.preprocess import InvoicePreprocessor
+from app.extraction.preprocess import InvoicePreprocess
 from commands import cli
 
 
@@ -170,11 +171,13 @@ def test_cli_rebuilds_cached_data_with_corrections_and_audit(
     settings = Settings(_env_file=None)
     monkeypatch.setattr(cli, "get_settings", lambda: settings)
     output = tmp_path / f"prepared.{extension}"
+    raw_path = DocileDatasetLoader(docile_archive.parent).save(tmp_path / "raw.parquet")
+    raw_bytes = raw_path.read_bytes()
     args = [
         "preprocess",
         "bert",
         "--source-path",
-        str(docile_archive.parent),
+        str(raw_path),
         "--output-path",
         str(output),
     ]
@@ -190,6 +193,7 @@ def test_cli_rebuilds_cached_data_with_corrections_and_audit(
     cli.main([*args, "--corrections-path", str(manifest)])
     assert capsys.readouterr().out.strip().splitlines()[-1] == str(output)
     assert source_path.read_bytes() == original_bytes
+    assert raw_path.read_bytes() == raw_bytes
     assert (
         DocileDatasetLoader(docile_archive.parent)
         .load("doc-0")
@@ -217,15 +221,15 @@ def test_cli_rebuilds_cached_data_with_corrections_and_audit(
         cli.main([*args, "--corrections-path", str(manifest)])
     assert output.read_bytes() == prepared_bytes
     assert source_path.read_bytes() == original_bytes
+    assert raw_path.read_bytes() == raw_bytes
 
 
 def test_invalid_correction_path_fails_before_download(tmp_path, monkeypatch):
     download = Mock(side_effect=AssertionError("Must not download"))
     monkeypatch.setattr(DocileDatasetDownloader, "download", download)
-    preparation = DocilePreprocess(
-        tmp_path / "raw",
+    preparation = InvoicePreprocess(
+        DocileSource(tmp_path / "raw", corrections_path=tmp_path / "missing.json"),
         tmp_path / "output.csv",
-        corrections_path=tmp_path / "missing.json",
     )
     with pytest.raises(FileNotFoundError, match="missing.json"):
         preparation.run()

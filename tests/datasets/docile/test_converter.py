@@ -5,7 +5,7 @@ import pytest
 
 from app.datasets.docile.converter import DocileAnnotationConverter
 from app.datasets.docile.models import OCRWord
-from app.datasets.docile.order import OCRReadingOrder
+from app.extraction.order import OCRReadingOrder
 
 
 def test_converter_retains_repeated_locations_fragments_and_unknown_fields():

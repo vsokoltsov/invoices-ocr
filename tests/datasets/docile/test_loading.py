@@ -10,10 +10,11 @@ from app.config import DocileInvoicesConfig
 from app.datasets.docile.downloader import DocileDatasetDownloader
 from app.datasets.docile.enums import DocileSplit
 from app.datasets.docile.loader import DocileDatasetLoader
-from app.datasets.docile.order import OCRReadingOrder
-from app.datasets.docile.preprocess import DocilePreprocess
+from app.datasets.docile.preprocess import DocileSource
 from app.datasets.split import DatasetsSplit
 from app.extraction.bert.preprocess import InvoicePreprocessor
+from app.extraction.order import OCRReadingOrder
+from app.extraction.preprocess import InvoicePreprocess, OrderOCRWords
 
 
 def test_loader_reads_original_data_and_preprocessing_preserves_provenance(
@@ -34,7 +35,6 @@ def test_loader_reads_original_data_and_preprocessing_preserves_provenance(
     from app.datasets.docile.preprocess import (
         ConvertAnnotations,
         ExtractOCRWords,
-        OrderOCRWords,
     )
     from app.pipelines.preprocess import DataFramePipeline
 
@@ -79,7 +79,20 @@ def test_preparation_roundtrip_and_pipeline_selection(
     docile_archive, tmp_path, monkeypatch, extension
 ):
     output = tmp_path / f"prepared.{extension}"
-    preparation = DocilePreprocess(docile_archive.parent, output)
+    raw_path = tmp_path / "raw.parquet"
+    loader = DocileDatasetLoader(docile_archive.parent)
+    assert loader.save(raw_path) == raw_path.resolve()
+    original_raw = raw_path.read_bytes()
+    raw = pd.read_parquet(raw_path)
+    first = raw.iloc[0]
+    assert json.loads(first.ocr_data) == json.loads(
+        (docile_archive.parent / f"ocr/{first.document_id}.json").read_text()
+    )
+    assert json.loads(first.json_data) == json.loads(
+        (docile_archive.parent / f"annotations/{first.document_id}.json").read_text()
+    )
+    assert "ocr_text" not in raw and "text_with_boxes" not in raw
+    preparation = InvoicePreprocess(DocileSource(raw_path), output)
     assert preparation.run() == output.resolve()
     assert docile_archive.is_file()
     monkeypatch.setattr(
@@ -105,12 +118,16 @@ def test_preparation_roundtrip_and_pipeline_selection(
         == 12
     )
     (docile_archive.parent / "val.json").write_text(json.dumps(["doc-0"]))
+    assert preparation.run() == output.resolve()
+    assert raw_path.read_bytes() == original_raw
     with pytest.raises(ValueError, match="both train and val"):
-        preparation.run()
+        loader.save(tmp_path / "invalid.parquet")
 
 
 def test_invalid_output_fails_before_download(tmp_path):
-    preparation = DocilePreprocess(tmp_path / "raw", tmp_path / "data.txt")
+    preparation = InvoicePreprocess(
+        DocileSource(tmp_path / "raw"), tmp_path / "data.txt"
+    )
     with pytest.raises(ValueError, match="extension"):
         preparation.run()
 
@@ -130,11 +147,40 @@ def test_test_split_is_loaded_and_keeps_its_assignment(docile_archive, tmp_path)
         (root / directory / "test-doc.json").write_bytes(
             (root / directory / "doc-0.json").read_bytes()
         )
-    output = DocilePreprocess(
-        root,
+    raw_path = DocileDatasetLoader(root).save(
+        tmp_path / "test-raw.parquet", split=DocileSplit.TEST
+    )
+    output = InvoicePreprocess(
+        DocileSource(raw_path),
         tmp_path / "test.csv",
-        split=DocileSplit.TEST,
     ).run()
     frame = pd.read_csv(output)
     assert frame["document_id"].tolist() == ["test-doc"]
     assert frame["split"].tolist() == ["test"]
+
+
+def test_preprocessing_reads_snapshot_without_source_json(docile_archive, tmp_path):
+    raw = DocileDatasetLoader(docile_archive.parent).save(tmp_path / "raw.parquet")
+    original = raw.read_bytes()
+    # Hide the source files to prove that preparation uses only the snapshot.
+    for name in ("ocr", "annotations"):
+        directory = docile_archive.parent / name
+        directory.rename(directory.with_name(f"{name}-hidden"))
+    output = InvoicePreprocess(DocileSource(raw), tmp_path / "prepared.parquet").run()
+    frame = pd.read_parquet(output)
+    assert len(frame) == 12
+    assert frame.iloc[0].ocr_text == "Acme Corporation"
+    assert frame["split"].value_counts().to_dict() == {"train": 10, "val": 2}
+    assert raw.read_bytes() == original
+    with pytest.raises(ValueError, match="different paths"):
+        InvoicePreprocess(DocileSource(raw), raw).run()
+    assert raw.read_bytes() == original
+    with pytest.raises(ValueError, match="missing columns"):
+        DocileSource(output).load()
+
+
+def test_raw_loader_requires_parquet_output(tmp_path):
+    with pytest.raises(ValueError, match="parquet extension"):
+        DocileDatasetLoader(tmp_path).save(tmp_path / "raw.csv")
+    with pytest.raises(ValueError, match="parquet file"):
+        DocileSource(tmp_path / "raw.csv").load()

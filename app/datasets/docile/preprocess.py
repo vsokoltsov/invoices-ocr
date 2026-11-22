@@ -1,17 +1,12 @@
 import json
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from pathlib import Path
-from zipfile import ZipFile
 
 import pandas as pd
-from pipefunc import PipeFunc, Pipeline
 
 from app.datasets.docile.converter import DocileAnnotationConverter
 from app.datasets.docile.corrections import DocileAnnotationCorrections
-from app.datasets.docile.enums import DocileSplit
-from app.datasets.docile.loader import DocileDatasetLoader
 from app.datasets.docile.models import OCRWord
-from app.datasets.docile.order import OCRReadingOrder
 
 
 @dataclass
@@ -125,29 +120,6 @@ class ExtractOCRWords:
         return result
 
 
-class OrderOCRWords:
-    """Apply visual-row reading order and rebuild text and character offsets."""
-
-    def __call__(self, frame: pd.DataFrame) -> pd.DataFrame:
-        """Order each document by visual row and horizontal position.
-
-        Args:
-            frame: Documents containing flattened OCRWord records.
-
-        Returns:
-            A copy with ocr_text and ordered OCR word dictionaries.
-        """
-        result = frame.copy()
-        documents = [
-            OCRReadingOrder().build(words) for words in frame["text_with_boxes"]
-        ]
-        result["ocr_text"] = [text for text, _ in documents]
-        result["text_with_boxes"] = [
-            [asdict(word) for word in words] for _, words in documents
-        ]
-        return result
-
-
 class ConvertAnnotations:
     """Map DocILE field types and line items to the invoice schema."""
 
@@ -168,179 +140,62 @@ class ConvertAnnotations:
 
 
 @dataclass
-class AddSplitMembership:
-    """Attach available official split assignments without selecting training splits.
+class DocileSource:
+    """Read raw DocILE Parquet and adapt its original OCR and annotations.
 
     Attributes:
-        root: Directory containing official split manifests.
-    """
-
-    root: Path
-
-    def __call__(self, frame: pd.DataFrame) -> pd.DataFrame:
-        """Attach split metadata and validate manifest consistency.
-
-        Args:
-            frame: Documents selected for export.
-
-        Returns:
-            A copy with a split column when official manifests are available.
-
-        Raises:
-            ValueError: Split assignments are duplicate or incomplete.
-        """
-        membership = {}
-        loader = DocileDatasetLoader(self.root)
-        for split in (DocileSplit.TRAIN, DocileSplit.VAL, DocileSplit.TEST):
-            if not (self.root / f"{split}.json").is_file():
-                continue
-            for document_id in loader.document_ids(split):
-                if document_id in membership:
-                    raise ValueError(
-                        f"Document appears in both {membership[document_id]} and {split}: {document_id}"
-                    )
-                membership[document_id] = split
-        result = frame.copy()
-        if membership:
-            result["split"] = result["document_id"].map(membership)
-            if result["split"].isna().any():
-                raise ValueError("Some documents have no official split assignment")
-        return result
-
-
-@dataclass
-class DocilePreprocess:
-    """Extract local archives and export model-independent invoice documents.
-
-    Attributes:
-        root: Directory containing downloaded archives or extracted files.
-        output_path: Destination Parquet or CSV file.
-        split: Official source split to preprocess.
+        dataset_path: Raw Parquet written by DocileDatasetLoader.save.
         use_snapped_boxes: Whether to select snapped OCR geometry.
         corrections_path: Optional reviewed annotation correction manifest.
     """
 
-    root: Path
-    output_path: Path
-    split: DocileSplit = DocileSplit.TRAINVAL
+    dataset_path: Path
     use_snapped_boxes: bool = True
     corrections_path: str | Path | None = None
 
-    def extract(self) -> Path:
-        """Extract the requested archive when its source files are absent.
+    def load(self) -> pd.DataFrame:
+        """Read original records from the raw snapshot without accessing JSON files.
 
         Returns:
-            Absolute directory containing extracted source files.
+            Raw document records with decoded OCR and annotation containers.
 
         Raises:
-            FileNotFoundError: The required archive was not downloaded.
-            ValueError: An archive contains a path outside the source directory.
+            ValueError: The input is not a valid raw DocILE Parquet dataset.
         """
-        root = Path(self.root).expanduser().resolve()
-        if (
-            (root / f"{self.split}.json").is_file()
-            and (root / "annotations").is_dir()
-            and (root / "ocr").is_dir()
-        ):
-            return root
-        name = "test" if self.split == DocileSplit.TEST else "annotated-trainval"
-        path = root / f"{name}.zip"
-        if not path.is_file():
-            raise FileNotFoundError(
-                f"Missing {path}. Run datasets download docile first."
+        path = Path(self.dataset_path).expanduser().resolve()
+        if path.suffix.lower() != ".parquet":
+            raise ValueError("Raw DocILE input must be a .parquet file")
+        frame = pd.read_parquet(path)
+        required = {"document_id", "ocr_data", "json_data", "pdf_path"}
+        if missing := required - set(frame.columns):
+            raise ValueError(
+                f"Raw DocILE Parquet is missing columns: {sorted(missing)}. Run datasets load docile first."
             )
-        with ZipFile(path) as archive:
-            for member in archive.infolist():
-                if not (root / member.filename).resolve().is_relative_to(root):
-                    raise ValueError(
-                        f"Archive entry is outside the dataset directory: {member.filename}"
-                    )
-            archive.extractall(root)
-        return root
-
-    def load(self, root: Path) -> pd.DataFrame:
-        """Read original records from the selected split.
-
-        Args:
-            root: Directory produced by archive extraction.
-
-        Returns:
-            Original documents without preprocessing transformations.
-        """
-        frame = DocileDatasetLoader(root).to_dataframe(self.split)
         if frame.empty:
-            raise ValueError("Selected split contains no documents")
+            raise ValueError("Raw DocILE Parquet has no documents")
+        if frame[list(required)].isna().any().any():
+            raise ValueError("Raw DocILE documents must not contain missing values")
+        if frame["document_id"].duplicated().any():
+            raise ValueError("Raw DocILE document IDs must be unique")
+        for column in ("ocr_data", "json_data"):
+            frame[column] = frame[column].map(
+                lambda value: json.loads(value) if isinstance(value, str) else value
+            )
         return frame
 
-    def save(self, frame: pd.DataFrame) -> Path:
-        """Write the transformed document frame.
-
-        Args:
-            frame: Model-independent preprocessed documents.
+    def normalization_steps(self):
+        """Configure transformations specific to the DocILE source format.
 
         Returns:
-            Absolute output file path.
-        """
-        result = frame.copy()
-        output = Path(self.output_path).expanduser().resolve()
-        output.parent.mkdir(parents=True, exist_ok=True)
-        for column in ("json_data", "annotation_corrections"):
-            if column in result:
-                result[column] = result[column].map(
-                    lambda value: json.dumps(value, ensure_ascii=False)
-                )
-        if output.suffix.lower() == ".parquet":
-            result.to_parquet(output, index=False)
-        else:
-            result["text_with_boxes"] = result["text_with_boxes"].map(
-                lambda value: json.dumps(value, ensure_ascii=False)
-            )
-            result.to_csv(output, index=False)
-        return output
-
-    def pipeline(self) -> Pipeline:
-        """Create explicit download-independent preprocessing dependencies.
-
-        Returns:
-            A PipeFunc graph from local source archives to a prepared file.
+            Ordered steps for corrections, OCR conversion, and annotation conversion.
         """
         corrections = (
             DocileAnnotationCorrections.from_file(self.corrections_path)
             if self.corrections_path
             else None
         )
-        steps = [
+        return (
             ApplyCorrections(corrections),
             ExtractOCRWords(self.use_snapped_boxes),
-            OrderOCRWords(),
             ConvertAnnotations(),
-            AddSplitMembership(Path(self.root).expanduser().resolve()),
-        ]
-        functions = [
-            PipeFunc(self.extract, output_name="root"),
-            PipeFunc(self.load, output_name="raw_documents"),
-        ]
-        previous = "raw_documents"
-        for index, step in enumerate(steps):
-            output = f"documents_{index}"
-            functions.append(
-                PipeFunc(step.__call__, output_name=output, renames={"frame": previous})
-            )
-            previous = output
-        functions.append(
-            PipeFunc(self.save, output_name="output_path", renames={"frame": previous})
         )
-        return Pipeline(functions)
-
-    def run(self) -> Path:
-        """Execute preprocessing without downloading or initializing models.
-
-        Returns:
-            Absolute path of the exported dataset.
-
-        Raises:
-            ValueError: The output extension is unsupported.
-        """
-        if Path(self.output_path).suffix.lower() not in {".csv", ".parquet"}:
-            raise ValueError("DocILE output must have a .csv or .parquet extension")
-        return self.pipeline().run("output_path", kwargs={})
