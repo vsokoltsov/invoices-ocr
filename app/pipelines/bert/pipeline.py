@@ -10,7 +10,6 @@ from app.aggregates.bert.params import BertPytorchParams
 from app.extraction.bert.artifacts import BertArtifacts
 from app.extraction.bert.builder import InvoiceRecordBuilder
 from app.extraction.bert.collation import InvoiceDataCollator
-from app.extraction.bert.decoding import OCRWordDecoder
 from app.extraction.bert.inspector import EntityErrorInspector
 from app.extraction.bert.item_builder import ItemRecordBuilder
 from app.extraction.bert.model import BertFieldExtractor
@@ -100,8 +99,8 @@ class BertTrainingPipeline(ModelPipeline):
 
     @cached_property
     def word_decoder(self):
-        """Configure OCR-word decoding for the selected label schema."""
-        return OCRWordDecoder(self.schema.label2id)
+        """Use first-subtoken argmax predictions for shared word scoring."""
+        return None
 
     def prepare_run(self):
         """Create output directories and save fixed model configuration."""

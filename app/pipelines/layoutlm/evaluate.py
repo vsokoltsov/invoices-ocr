@@ -7,7 +7,7 @@ from app.extraction.enums import IGNORE_INDEX
 from app.extraction.layoutlm.artifacts import LayoutLMArtifacts
 from app.extraction.layoutlm.checkpoint import LayoutLMCheckpointLoader
 from app.extraction.layoutlm.evaluation import LayoutLMEvaluation
-from app.extraction.layoutlm.metrics import EpochMetrics
+from app.extraction.metrics import WindowMetrics
 from app.pipelines.evaluate import EvaluateCheckpoint
 
 
@@ -34,7 +34,7 @@ class EvaluateTraining(EvaluateCheckpoint):
         ).load()
         evaluator = LayoutLMEvaluation(
             model=model,
-            metrics=EpochMetrics(schema.labels, checkpoint["fields"]),
+            metrics=WindowMetrics(schema.id2label),
             schema=schema,
             device=self.device,
             criterion=nn.CrossEntropyLoss(ignore_index=IGNORE_INDEX),
