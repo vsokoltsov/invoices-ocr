@@ -7,7 +7,7 @@
 Train once and save the best validation-F1 weights with their validation inputs:
 
 ```bash
-uv run --env-file .env python -m commands.cli train bert-pytorch \
+uv run --env-file .env python -m commands.cli train bert \
   --dataset-path docile_df.parquet \
   --num-epoch 20 \
   --checkpoint-dir data/interim/docile_checkpoint \
@@ -27,7 +27,7 @@ checkpoint with the same access controls as the dataset.
 Compare decoders without training, downloading a model, or rebuilding the split:
 
 ```bash
-uv run python -m commands.cli debug bert-pytorch \
+uv run python -m commands.cli debug bert \
   --checkpoint-dir data/interim/docile_checkpoint \
   --output-dir data/interim/docile_decoder_comparison \
   --device auto
@@ -70,7 +70,7 @@ For a checkpoint without `test.json`, supply the original prepared dataset and
 training split seed:
 
 ```bash
-uv run python -m commands.cli debug bert-pytorch \
+uv run python -m commands.cli debug bert \
   --checkpoint-dir data/interim/docile_checkpoint \
   --split test \
   --dataset-path docile_df.parquet \

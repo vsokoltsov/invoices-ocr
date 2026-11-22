@@ -2,7 +2,7 @@
 
 
 ```bash
-uv run --env-file .env python -m commands.cli train bert-pytorch \
+uv run --env-file .env python -m commands.cli train bert \
   --dataset-path docile_df.parquet \
   --line-items-only \
   --num-epoch 20 \
@@ -27,7 +27,7 @@ rejection. A split manifest is saved with each checkpoint.
 
 ## Match annotations to OCR words
 
-The builder selects OCR words by annotation boxes and pages, preserves global
+The preprocessor selects OCR words by annotation boxes and pages, preserves global
 text offsets, and retains `line_item_id` in spans and annotation sources. Different
 items cannot merge during span preparation, even when they share a field type.
 Words assigned to competing item IDs are reported as overlaps. Missing spans,
@@ -56,7 +56,7 @@ OCR-word decoding is used for validation, best-checkpoint selection, final test
 evaluation, and diagnostics. Loss is computed from raw logits.
 
 The saved checkpoint contains the item schema and original validation inputs.
-Run `debug bert-pytorch` with this checkpoint to compare decoders for item fields.
+Run `debug bert` with this checkpoint to compare decoders for item fields.
 Keep item and invoice experiments in separate output and checkpoint directories.
 
 ![Train BERT on token logits, select weights using validation entity F1, then reload, test, and publish the saved model.](assets/bert-pytorch-line-items-04-training.png)

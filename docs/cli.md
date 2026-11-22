@@ -21,38 +21,88 @@ uv run python -m commands.cli --help
 uv run python -m commands.cli datasets download docile --help
 ```
 
-## Download and prepare DocILE
+## Download DocILE archives
 
-Download annotated documents or reuse cached data, then prepare the selected
-split as Parquet or CSV. The command prints the absolute output path. Defaults
-use the `DOCILE_` environment prefix. Obtain a DocILE access token first; supply
-it through `DOCILE_TOKEN` in the environment or `.env`, or through `--token`.
-Omit `--token` from the example to use the environment setting.
+The download command saves and validates source ZIP archives. It does not extract
+files, convert annotations, order OCR words, or write a training DataFrame. Existing
+valid archives are reused. Defaults use the `DOCILE_` environment prefix.
+Obtain a DocILE access token first; set `DOCILE_TOKEN` in `.env` or use `--token`.
 
 ```sh
-uv run python -m commands.cli datasets download docile \
-  --token YOUR_DOCILE_TOKEN \
+uv run --env-file .env python -m commands.cli datasets download docile \
   --destination-path ./data/raw/docile \
-  --output-path ./data/raw/docile.parquet \
   --split trainval \
-  --use-snapped-boxes \
-  --corrections-path "" \
   --minimum-archive-bytes 100000000
 ```
 
 | Option | Meaning |
 | --- | --- |
 | `--token` | Access token; defaults to `DOCILE_TOKEN`. |
-| `--destination-path` | Directory for dataset archives and extracted files. |
-| `--output-path` | Prepared dataset path ending in `.parquet` or `.csv`. |
-| `--split` | `train`, `val`, `trainval` (default), or `test`. |
-| `--use-snapped-boxes` / `--no-use-snapped-boxes` | Use OCR boxes snapped to text when available (default), or original OCR boxes. |
-| `--corrections-path` | JSON correction manifest; `""` keeps original annotations. See [Annotation corrections](#annotation-corrections). |
+| `--destination-path` | Directory for downloaded ZIP archives. |
+| `--split` | `train`, `val`, or `trainval` downloads `annotated-trainval.zip`; `test` downloads `test.zip`. |
 | `--minimum-archive-bytes` | Minimum accepted archive size in bytes; must be nonnegative. |
+
+The command prints the absolute archive directory. It keeps the ZIP files.
+
+## Load raw DocILE Parquet
+
+After downloading, load the selected split into a raw Parquet file:
+
+```sh
+uv run --env-file .env python -m commands.cli datasets load docile \
+  --source-path ./data/raw/docile \
+  --output-path ./data/raw/docile.parquet \
+  --split trainval
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--source-path` | Local ZIP or extracted-file directory; defaults to `DOCILE_DESTINATION_PATH`. |
+| `--output-path` | Raw `.parquet` file; defaults to `DOCILE_OUTPUT_PATH`. |
+| `--split` | `train`, `val`, `trainval` (default), or `test`. |
+
+The loader extracts local archives when needed. It stores one row per document:
+`document_id`, `ocr_data`, `json_data`, `pdf_path`, and available official `split`
+metadata. OCR and annotations are stored as JSON strings with their original
+values and structure. This step does not apply corrections, select geometry,
+order words, or convert field names. PDFs remain separate files.
+The command prints the absolute raw file path and does not download data.
+
+## Preprocess documents for a model
+
+Use `preprocess bert` or `preprocess layoutlm` with the raw Parquet file.
+PipeFunc applies optional corrections, flattens OCR words, converts annotations,
+orders words by visual row, rebuilds text offsets, and saves a separate export.
+The command does not access the original JSON files or initialize a model.
+
+```sh
+uv run --env-file .env python -m commands.cli preprocess bert \
+  --source-path ./data/raw/docile.parquet \
+  --output-path ./data/interim/docile.parquet \
+  --use-snapped-boxes \
+  --corrections-path ""
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--source-path` | Raw Parquet file; defaults to `DOCILE_OUTPUT_PATH`. |
+| `--output-path` | Export `.parquet` or `.csv`; defaults to `BERTPYTORCH_DATASET_PATH` or `LAYOUTLM_DATASET_PATH`. |
+| `--use-snapped-boxes` / `--no-use-snapped-boxes` | Select snapped geometry when available (default), or original geometry. |
+| `--corrections-path` | Reviewed annotation correction manifest; `""` preserves original labels. |
+
+For LayoutLM, replace `preprocess bert` with `preprocess layoutlm`. Both commands
+produce the same invoice schema, so one export can serve both models.
+Model-specific label construction runs later during training.
+
+The command prints the absolute export path. It leaves the raw file unchanged
+and rejects matching input and output paths. Set model dataset paths to the
+processed export. If an existing `.env` uses the raw file for these settings,
+change `BERTPYTORCH_DATASET_PATH` and `LAYOUTLM_DATASET_PATH` to
+`./data/interim/docile.parquet`. See [preprocessing](preprocessing.md).
 
 ## Cache DocILE page images
 
-After downloading and preparing DocILE, render its PDF pages into the image
+After loading raw DocILE Parquet, render its PDF pages into the image
 cache used by LayoutLM training:
 
 ```sh
@@ -63,7 +113,7 @@ uv run python -m commands.cli datasets cache-images docile \
 
 | Option | Meaning |
 | --- | --- |
-| `--dataset-path` | Prepared `.parquet` or `.csv` containing `document_id` and `pdf_path`; defaults to `DOCILE_OUTPUT_PATH`. |
+| `--dataset-path` | Raw or processed `.parquet`, or processed `.csv`, containing `document_id` and `pdf_path`; defaults to `DOCILE_OUTPUT_PATH`. |
 | `--images-path` | Cache directory; defaults to `LAYOUTLM_IMAGES_PATH`. |
 
 The command renders every page, including pages without selected field labels,
@@ -87,8 +137,8 @@ Defaults use the `BERTPYTORCH_` environment prefix, except `--random-seed` uses
 `RANDOM_SEED`.
 
 ```sh
-uv run python -m commands.cli train bert-pytorch \
-  --dataset-path ./data/raw/docile.parquet \
+uv run python -m commands.cli train bert \
+  --dataset-path ./data/interim/docile.parquet \
   --result-filename ./data/interim/docile-bert \
   --diagnostic-dir ./data/interim/bert_diagnostics \
   --checkpoint-dir ./data/interim/bert_pytorch_checkpoint \
@@ -146,7 +196,7 @@ Each setting is also exposed as a CLI option:
 
 ```sh
 uv run python -m commands.cli train layoutlm \
-  --dataset-path ./data/raw/docile.parquet \
+  --dataset-path ./data/interim/docile.parquet \
   --model-name microsoft/layoutlmv3-base \
   --output-dir ./data/interim/layoutlm_experiment \
   --checkpoint-path ./data/interim/layoutlm_experiment/best.pt \
@@ -212,7 +262,7 @@ uv run --env-file .env python -m commands.cli pipeline bert \
   --project ocr \
   --execution local \
   --queue default \
-  --dataset-path ./data/raw/docile.parquet \
+  --dataset-path ./data/interim/docile.parquet \
   --result-filename ./data/interim/bert/history \
   --diagnostic-dir ./data/interim/bert/diagnostics \
   --checkpoint-dir ./data/interim/bert/checkpoints \
@@ -242,7 +292,7 @@ uv run --env-file .env python -m commands.cli pipeline layoutlm \
   --project ocr \
   --execution local \
   --queue default \
-  --dataset-path ./data/raw/docile.parquet \
+  --dataset-path ./data/interim/docile.parquet \
   --model-name microsoft/layoutlmv3-base \
   --output-dir ./data/interim/layoutlm_experiment \
   --checkpoint-path ./data/interim/layoutlm_experiment/best.pt \
@@ -298,7 +348,7 @@ evaluation records and writes `decoder_comparison.csv` plus per-decoder reports.
 Defaults use the `BERT_PYTORCH_DEBUG_` environment prefix.
 
 ```sh
-uv run python -m commands.cli debug bert-pytorch \
+uv run python -m commands.cli debug bert \
   --checkpoint-dir ./data/interim/bert_pytorch_checkpoint \
   --output-dir ./data/interim/bert_decoder_debug \
   --device auto \
@@ -341,12 +391,11 @@ The final evaluation split is not searched for development diagnostics.
 
 ## DocILE exports
 
-The download command reuses extracted files or a cached archive and prints the
-absolute output path. `--split` accepts `train`, `val`, `trainval` (default), or
-`test`. Loading a split requires its manifest, OCR files, and annotations locally.
-`--no-use-snapped-boxes` selects the original OCR boxes. The default export uses
-Parquet; an output path ending in `.csv` produces CSV instead. Annotations use
-JSON strings in both formats to preserve empty sections and variable metadata.
+`datasets load docile` writes original OCR and annotations to raw Parquet.
+`preprocess bert` and `preprocess layoutlm` read that snapshot and write a
+separate processed file. Select the split when loading the raw snapshot.
+
+The processed export uses JSON strings for annotations in both formats.
 Parquet preserves nested OCR words; CSV stores those words as JSON strings too.
 
 ## DocILE labels and splits
@@ -368,9 +417,9 @@ For a custom dataset with verified annotation corrections, pass a manifest when
 preparing the data:
 
 ```sh
-uv run python -m commands.cli datasets download docile \
-  --destination-path ./data/raw/docile \
-  --output-path ./data/raw/docile-corrected.parquet \
+uv run python -m commands.cli preprocess bert \
+  --source-path ./data/raw/docile.parquet \
+  --output-path ./data/interim/docile-corrected.parquet \
   --corrections-path ./config/docile_corrections.json
 ```
 
@@ -382,11 +431,11 @@ remittance-address annotations in document `26f0e3a78e26450b9b47dd81` as
 Rules select an annotation by document ID, zero-based page, original type, exact
 text, and optionally its exact normalized box. Each applicable rule must match
 exactly one original annotation. Missing, ambiguous, or conflicting rules fail.
-Only the field type is changed; original annotation files are never written.
+Only the field type is changed; the raw Parquet and original annotation files stay unchanged.
 Rules for documents outside the selected split remain unused.
 
 Corrections are applied before field conversion. Re-running preparation rebuilds
-the output even when extracted data and an output file already exist. Corrected
+the output from the raw snapshot even when an output file already exists. Corrected
 exports include an `annotation_corrections` column containing JSON audit entries
 with selectors, replacement types, and review reasons. Existing prepared files
 are not patched automatically. Train using the newly prepared path; preserve
