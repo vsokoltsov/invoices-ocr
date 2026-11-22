@@ -7,9 +7,9 @@ from torch.utils.data import DataLoader
 
 from app.extraction.enums import FIELD_TO_ENTITY
 from app.extraction.layoutlm.artifacts import LayoutLMArtifacts
-from app.extraction.layoutlm.builder import InvoiceBuilder
 from app.extraction.layoutlm.converter import AttachmentToImageConverter
 from app.extraction.layoutlm.dataset import InvoiceDataset
+from app.extraction.layoutlm.preprocess import InvoicePreprocessor
 
 
 def test_encoding_preserves_word_alignment_and_caches_float_images(
@@ -18,7 +18,7 @@ def test_encoding_preserves_word_alignment_and_caches_float_images(
     image_processor,
     tmp_path,
 ):
-    pages = InvoiceBuilder(FIELD_TO_ENTITY).prepare_document(document_row)
+    pages = InvoicePreprocessor(FIELD_TO_ENTITY).prepare_document(document_row)
     converter = AttachmentToImageConverter(
         LayoutLMArtifacts(output_dir=tmp_path, images_path=tmp_path / "images")
     )
@@ -88,7 +88,7 @@ def test_invalid_window_length_is_rejected(
 def test_invalid_words_fail_before_training(
     document_row, layout_tokenizer, image_processor, tmp_path, failure
 ):
-    page = deepcopy(InvoiceBuilder(FIELD_TO_ENTITY).prepare_document(document_row)[0])
+    page = deepcopy(InvoicePreprocessor(FIELD_TO_ENTITY).prepare_document(document_row)[0])
     if failure == "empty":
         page.update(words=[], boxes=[], labels=[])
     elif failure == "mismatched":
@@ -110,7 +110,7 @@ def test_invalid_words_fail_before_training(
 def test_custom_ignore_index_masks_special_padding_and_continuation_tokens(
     document_row, layout_tokenizer, image_processor, tmp_path
 ):
-    pages = InvoiceBuilder(FIELD_TO_ENTITY).prepare_document(document_row)
+    pages = InvoicePreprocessor(FIELD_TO_ENTITY).prepare_document(document_row)
     dataset = InvoiceDataset(
         pages,
         layout_tokenizer,
@@ -128,7 +128,7 @@ def test_custom_ignore_index_masks_special_padding_and_continuation_tokens(
 def test_entity_continuations_start_with_b_at_window_boundaries(
     document_row, layout_tokenizer, image_processor, tmp_path
 ):
-    pages = InvoiceBuilder(FIELD_TO_ENTITY).prepare_document(document_row)
+    pages = InvoicePreprocessor(FIELD_TO_ENTITY).prepare_document(document_row)
     page = deepcopy(pages[0])
     page.update(words=["A", "A", "A"], boxes=[[0, 0, 100, 100]] * 3, labels=[1, 2, 2])
     dataset = InvoiceDataset(

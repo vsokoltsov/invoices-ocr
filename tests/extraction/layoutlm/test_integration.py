@@ -9,12 +9,12 @@ from torch.utils.data import DataLoader
 from transformers import AutoModel
 
 from app.extraction.layoutlm.artifacts import LayoutLMArtifacts
-from app.extraction.layoutlm.builder import InvoiceBuilder
 from app.extraction.layoutlm.checkpoint import LayoutLMCheckpointLoader
 from app.extraction.layoutlm.converter import AttachmentToImageConverter
 from app.extraction.layoutlm.dataset import InvoiceDataset
 from app.extraction.layoutlm.metrics import EpochMetrics
 from app.extraction.layoutlm.model import LayoutLMFieldExtractor
+from app.extraction.layoutlm.preprocess import InvoicePreprocessor
 from app.extraction.layoutlm.training import OCRInvoiceTraining
 from app.extraction.schema import InvoiceLabelSchema
 
@@ -29,7 +29,7 @@ def test_pdf_annotations_to_training_and_reload(
 ):
     torch.manual_seed(42)
     schema = InvoiceLabelSchema()
-    pages, rejected = InvoiceBuilder(schema.field_to_entity, schema.label2id).build(
+    pages, rejected = InvoicePreprocessor(schema.field_to_entity, schema.label2id).run(
         pd.DataFrame([vars(document_row)])
     )
     assert rejected.empty

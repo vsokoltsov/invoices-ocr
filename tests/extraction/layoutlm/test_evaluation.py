@@ -5,10 +5,10 @@ import torch
 from torch.utils.data import DataLoader
 
 from app.extraction.layoutlm.artifacts import LayoutLMArtifacts
-from app.extraction.layoutlm.builder import InvoiceBuilder
 from app.extraction.layoutlm.converter import AttachmentToImageConverter
 from app.extraction.layoutlm.dataset import InvoiceDataset
 from app.extraction.layoutlm.model import LayoutLMFieldExtractor
+from app.extraction.layoutlm.preprocess import InvoicePreprocessor
 from app.extraction.results import TrainingResult
 from app.extraction.schema import InvoiceLabelSchema
 from app.pipelines.layoutlm.evaluate import EvaluateTraining
@@ -18,7 +18,7 @@ def test_test_step_loads_saved_weights_without_live_trainer(
     document_row, layout_tokenizer, image_processor, layout_backbone, tmp_path
 ):
     schema = InvoiceLabelSchema()
-    pages = InvoiceBuilder(schema.field_to_entity).prepare_document(document_row)
+    pages = InvoicePreprocessor(schema.field_to_entity).prepare_document(document_row)
     dataset = InvoiceDataset(
         pages,
         layout_tokenizer,
