@@ -17,6 +17,16 @@ def publication(tmp_path, monkeypatch):
     (tmp_path / "test_metrics.json").write_text(
         json.dumps(
             {
+                "word_metrics": {
+                    "loss": 0.1,
+                    "bio_word_accuracy": 0.9,
+                    "field_word_micro_precision": 0.8,
+                    "field_word_micro_recall": 0.9,
+                    "field_word_micro_f1": 0.85,
+                    "field_word_macro_f1": 0.8,
+                    "per_field": {},
+                },
+                "entity_report": {},
                 "entity_precision": 0.8,
                 "entity_recall": 0.9,
                 "entity_f1": 0.85,
@@ -60,7 +70,7 @@ def test_publisher_uploads_checkpoint_and_artifacts_without_deleting_local_model
     assert all(
         call.kwargs["wait_on_upload"] for call in task.upload_artifact.call_args_list
     )
-    assert task.get_logger.return_value.report_scalar.call_count == 3
+    assert task.get_logger.return_value.report_scalar.call_count == 9
     assert checkpoint.is_file()
     task.mark_failed.assert_not_called()
     task.close.assert_called_once()

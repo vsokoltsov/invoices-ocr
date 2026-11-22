@@ -84,9 +84,11 @@ class InvoiceDataset(Dataset):
 
                     input_ids.extend(tokens)
                     boxes.extend([page["boxes"][word_id]] * len(tokens))
-                    labels.extend(
-                        [page["labels"][word_id]] + [ignore_index] * continuation_count
-                    )
+                    label = page["labels"][word_id]
+                    # A continued entity starts a new span at a window boundary.
+                    if word_id == start and label > 0 and label % 2 == 0:
+                        label -= 1
+                    labels.extend([label] + [ignore_index] * continuation_count)
                     word_ids.extend([word_id] + [-1] * continuation_count)
 
                 input_ids.append(tokenizer.sep_token_id)

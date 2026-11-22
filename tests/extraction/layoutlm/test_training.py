@@ -32,7 +32,7 @@ class TinyPageDataset(Dataset):
             }
             for tokens, labels, words in (
                 ([1, 0, 0], [1, -100, -100], [0, -1, -1]),
-                ([2, 0, 0], [2, 0, -100], [1, 2, -1]),
+                ([1, 0, 0], [1, 0, -100], [1, 2, -1]),
             )
         ]
 
@@ -80,7 +80,7 @@ def make_trainer(tmp_path, epochs=1):
     )
 
 
-def test_training_and_evaluation_reset_metrics_and_restore_page_entities(tmp_path):
+def test_training_and_evaluation_reset_metrics_and_score_separate_windows(tmp_path):
     trainer = make_trainer(tmp_path)
     trainer.metrics.confusion.fill_(100)
     trainer.metrics.loss_sum = 1000
@@ -94,10 +94,10 @@ def test_training_and_evaluation_reset_metrics_and_restore_page_entities(tmp_pat
     assert trainer.scheduler.last_epoch == previous_step + len(trainer.train_loader)
 
     result = trainer.eval_one_epoch(1)
-    # The B/I entity spans two windows and must be counted only once.
+    # Each token window contains a separate entity span.
     assert result.entity_f1 == result.entity_precision == result.entity_recall == 1.0
-    assert result.entity_report["SELLER_NAME"]["support"] == 1
-    assert result.word_metrics.per_field["invoice.seller_name"].support == 2
+    assert result.entity_report["SELLER_NAME"]["support"] == 2
+    assert result.word_metrics.per_field["SELLER_NAME"].support == 2
     assert trainer.metrics.word_count == 3
     assert not trainer.model.training
     assert trainer.eval_one_epoch(2) == result
@@ -108,7 +108,7 @@ def test_validation_uses_strict_bio_boundaries(tmp_path):
     trainer.val_loader.dataset.samples[0]["input_ids"][0] = 2
     result = trainer.eval_one_epoch(1)
     assert result.word_metrics.field_word_micro_f1 == 1.0
-    assert result.entity_f1 == 0.0
+    assert result.entity_f1 == pytest.approx(2 / 3)
 
 
 def test_masked_training_batch_does_not_advance_scheduler_or_metrics(tmp_path):
@@ -209,11 +209,10 @@ def test_checkpoint_is_saved_only_on_improvement_and_survives_failure(
     assert torch.all(payload["model_state_dict"]["embedding.weight"] == 3)
 
 
-def test_duplicate_word_evaluation_is_rejected(tmp_path):
+def test_window_evaluation_does_not_reconstruct_page_word_ids(tmp_path):
     trainer = make_trainer(tmp_path)
     trainer.val_loader.dataset.samples[1]["word_ids"][0] = 0
-    with pytest.raises(ValueError, match="word was evaluated more than once"):
-        trainer.eval_one_epoch(1)
+    assert trainer.eval_one_epoch(1).entity_report["SELLER_NAME"]["support"] == 2
 
 
 def test_epoch_count_must_be_positive(tmp_path):

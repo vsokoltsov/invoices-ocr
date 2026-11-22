@@ -4,6 +4,7 @@ from clearml import OutputModel
 
 from app.extraction.layoutlm.artifacts import LayoutLMArtifacts
 from app.extraction.publisher import ClearMLPublisher as BaseClearMLPublisher
+from app.extraction.word_metrics import ValidationMetricsResult
 
 
 @dataclass
@@ -41,7 +42,4 @@ class ClearMLPublisher(BaseClearMLPublisher):
         Returns:
             Entity precision, recall, and F1 as Python floats.
         """
-        return {
-            name: float(metrics[name])
-            for name in ("entity_precision", "entity_recall", "entity_f1")
-        }
+        return ValidationMetricsResult.from_dict(metrics).scalars

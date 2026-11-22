@@ -13,6 +13,7 @@ from app.extraction.layoutlm.metrics import (
     EpochMetricsResult,
     ValidationMetricsResult,
 )
+from app.extraction.metrics import WindowMetrics
 from app.extraction.schema import InvoiceLabelSchema
 from app.extraction.training import (
     BestCheckpointWriter,
@@ -29,7 +30,7 @@ class OCRInvoiceTraining(
     """Configure shared training for image, text, and layout inputs.
 
     Model, loaders, optimizer, criterion, device, and epoch count come from the
-    shared trainer. Evaluation reconstructs pages and uses strict IOB2 scoring.
+    shared trainer. Evaluation uses strict IOB2 scoring per window.
 
     Attributes:
         metrics: Word-level accumulator with the same labels as the schema.
@@ -76,14 +77,14 @@ class OCRInvoiceTraining(
         return self.scheduler
 
     def make_evaluator(self) -> LayoutLMEvaluation:
-        """Build strict page-level evaluation for the current model.
+        """Build strict window-level evaluation for the current model.
 
         Returns:
             Evaluator sharing this model, schema, criterion, and metrics.
         """
         return LayoutLMEvaluation(
             model=self.model,
-            metrics=self.metrics,
+            metrics=WindowMetrics(self.schema.id2label),
             schema=self.schema,
             device=self.device,
             criterion=self.criterion,

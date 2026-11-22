@@ -123,3 +123,24 @@ def test_custom_ignore_index_masks_special_padding_and_continuation_tokens(
     )
     for sample in dataset:
         assert torch.equal(sample["labels"] == -7, sample["word_ids"] == -1)
+
+
+def test_entity_continuations_start_with_b_at_window_boundaries(
+    document_row, layout_tokenizer, image_processor, tmp_path
+):
+    pages = InvoiceBuilder(FIELD_TO_ENTITY).prepare_document(document_row)
+    page = deepcopy(pages[0])
+    page.update(words=["A", "A", "A"], boxes=[[0, 0, 100, 100]] * 3, labels=[1, 2, 2])
+    dataset = InvoiceDataset(
+        [page],
+        layout_tokenizer,
+        image_processor,
+        AttachmentToImageConverter(
+            LayoutLMArtifacts(output_dir=tmp_path, images_path=tmp_path)
+        ),
+        max_length=4,
+    )
+    assert len(dataset) == 3
+    assert [
+        sample["labels"][sample["labels"] != -100].tolist() for sample in dataset
+    ] == [[1], [1], [1]]
