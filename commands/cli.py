@@ -17,9 +17,12 @@ from app.config import (
     Settings,
     get_settings,
 )
-from app.datasets.docile.downloader import DocileDatasetDownloader
-from app.datasets.docile.preparation import DocileInvoicesPreparation
+from app.datasets.docile.downloader import DocileDataset, DocileDatasetDownloader
+from app.datasets.docile.enums import DocileSplit
+from app.datasets.docile.loader import DocileDatasetLoader
+from app.datasets.docile.preprocess import DocileSource
 from app.extraction.bert.debug import BertPytorchDebugPipeline
+from app.extraction.preprocess import InvoicePreprocess
 from app.pipelines.bert.pipeline import BertTrainingPipeline
 
 
@@ -86,7 +89,7 @@ def bert_params(args: argparse.Namespace) -> BertPytorchParams:
     )
 
 
-def train_bert_pytorch(args: argparse.Namespace, settings: Settings) -> None:
+def train_bert(args: argparse.Namespace, settings: Settings) -> None:
     BertTrainingPipeline(params=bert_params(args)).run()
 
 
@@ -140,7 +143,7 @@ def run_clearml_pipeline(args: argparse.Namespace, settings: Settings) -> None:
     print(controller.id)
 
 
-def debug_bert_pytorch(args: argparse.Namespace, settings: Settings) -> None:
+def debug_bert(args: argparse.Namespace, settings: Settings) -> None:
     path = BertPytorchDebugPipeline().run(
         BertPytorchDebugParams(
             checkpoint_dir=args.CHECKPOINT_DIR,
@@ -155,18 +158,48 @@ def debug_bert_pytorch(args: argparse.Namespace, settings: Settings) -> None:
 
 
 def download_docile(args: argparse.Namespace, settings: Settings) -> None:
+    """Download source archives without extracting or preprocessing invoices.
+
+    Args:
+        args: Download token, destination, split, and validation settings.
+        settings: Application settings used as a token fallback.
+    """
     downloader = DocileDatasetDownloader(
         token=args.TOKEN or settings.DOCILE.TOKEN or settings.DOCILE_TOKEN,
+        dataset=DocileDataset.TEST
+        if args.SPLIT == DocileSplit.TEST
+        else DocileDataset.ANNOTATED_TRAINVAL,
         target_dir=args.DESTINATION_PATH,
-        unzip=True,
         minimum_archive_bytes=args.MINIMUM_ARCHIVE_BYTES,
     )
-    path = DocileInvoicesPreparation(
-        downloader=downloader,
+    print(downloader.download().resolve())
+
+
+def load_docile(args: argparse.Namespace, settings: Settings) -> None:
+    """Store original DocILE records in raw Parquet without preprocessing.
+
+    Args:
+        args: Local archive directory, raw output path, and source split.
+        settings: Application settings; CLI defaults have already been resolved.
+    """
+    path = DocileDatasetLoader(args.source_path).save(args.OUTPUT_PATH, args.SPLIT)
+    print(path)
+
+
+def preprocess_model(args: argparse.Namespace, settings: Settings) -> None:
+    """Preprocess a raw DocILE Parquet snapshot without accessing source JSON files.
+
+    Args:
+        args: Raw Parquet path, processed output path, and preprocessing settings.
+        settings: Application settings; CLI defaults have already been resolved.
+    """
+    path = InvoicePreprocess(
+        source=DocileSource(
+            dataset_path=Path(args.source_path),
+            use_snapped_boxes=args.USE_SNAPPED_BOXES,
+            corrections_path=args.CORRECTIONS_PATH or None,
+        ),
         output_path=Path(args.OUTPUT_PATH),
-        split=args.SPLIT,
-        use_snapped_boxes=args.USE_SNAPPED_BOXES,
-        corrections_path=args.CORRECTIONS_PATH or None,
     ).run()
     print(path)
 
@@ -186,14 +219,14 @@ def build_parser(settings: Settings) -> argparse.ArgumentParser:
     commands = parser.add_subparsers(dest="command", required=True)
     train = commands.add_parser("train", help="Train a model")
     models = train.add_subparsers(dest="model", required=True)
-    pytorch = models.add_parser(
-        "bert-pytorch",
+    bert = models.add_parser(
+        "bert",
         help="Train BERT with a plain PyTorch training loop",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    pytorch.add_argument("--random-seed", type=int, default=settings.RANDOM_SEED)
-    add_config_options(pytorch, settings.BERT_PYTORCH)
-    pytorch.set_defaults(handler=train_bert_pytorch)
+    bert.add_argument("--random-seed", type=int, default=settings.RANDOM_SEED)
+    add_config_options(bert, settings.BERT_PYTORCH)
+    bert.set_defaults(handler=train_bert)
 
     layoutlm = models.add_parser(
         "layoutlm",
@@ -235,26 +268,69 @@ def build_parser(settings: Settings) -> argparse.ArgumentParser:
 
     debug = commands.add_parser("debug", help="Inspect saved model predictions")
     debug_models = debug.add_subparsers(dest="model", required=True)
-    debug_pytorch = debug_models.add_parser(
-        "bert-pytorch",
+    debug_bert_parser = debug_models.add_parser(
+        "bert",
         help="Compare token and OCR-word decoders without training",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    add_config_options(debug_pytorch, settings.BERT_PYTORCH_DEBUG)
-    debug_pytorch.set_defaults(handler=debug_bert_pytorch)
+    add_config_options(debug_bert_parser, settings.BERT_PYTORCH_DEBUG)
+    debug_bert_parser.set_defaults(handler=debug_bert)
 
-    datasets = commands.add_parser("datasets", help="Download and prepare datasets")
+    preprocess = commands.add_parser(
+        "preprocess", help="Preprocess source documents for a model"
+    )
+    preprocess_models = preprocess.add_subparsers(dest="model", required=True)
+    for model_name, model_config in (
+        ("bert", settings.BERT_PYTORCH),
+        ("layoutlm", settings.LAYOUTLM),
+    ):
+        model_preprocess = preprocess_models.add_parser(
+            model_name,
+            help=f"Preprocess local DocILE documents for {model_name}",
+            formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+        )
+        add_config_options(
+            model_preprocess,
+            settings.DOCILE,
+            exclude=(
+                "TOKEN",
+                "DESTINATION_PATH",
+                "MINIMUM_ARCHIVE_BYTES",
+                "OUTPUT_PATH",
+                "SPLIT",
+            ),
+        )
+        model_preprocess.add_argument(
+            "--source-path",
+            default=settings.DOCILE.OUTPUT_PATH,
+            help="Raw DocILE Parquet file written by datasets load docile.",
+        )
+        model_preprocess.add_argument(
+            "--output-path",
+            dest="OUTPUT_PATH",
+            default=model_config.DATASET_PATH,
+            help="Exported invoice Parquet or CSV; defaults to the model dataset path.",
+        )
+        model_preprocess.set_defaults(handler=preprocess_model)
+
+    datasets = commands.add_parser(
+        "datasets", help="Download archives, load raw Parquet, and cache page images"
+    )
     dataset_commands = datasets.add_subparsers(dest="dataset_command", required=True)
     download = dataset_commands.add_parser(
-        "download", help="Download a dataset and save a prepared dataframe"
+        "download", help="Download source archives without preprocessing"
     )
     dataset_names = download.add_subparsers(dest="dataset", required=True)
     docile = dataset_names.add_parser(
         "docile",
-        help="Download and prepare annotated DocILE invoices",
+        help="Download DocILE source archives",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    add_config_options(docile, settings.DOCILE, exclude=("TOKEN",))
+    add_config_options(
+        docile,
+        settings.DOCILE,
+        exclude=("TOKEN", "OUTPUT_PATH", "USE_SNAPPED_BOXES", "CORRECTIONS_PATH"),
+    )
     docile.add_argument(
         "--token",
         dest="TOKEN",
@@ -262,6 +338,33 @@ def build_parser(settings: Settings) -> argparse.ArgumentParser:
         help="Download token; defaults to the DOCILE_TOKEN environment setting.",
     )
     docile.set_defaults(handler=download_docile)
+
+    load = dataset_commands.add_parser(
+        "load", help="Load local source data into raw Parquet"
+    )
+    load_datasets = load.add_subparsers(dest="dataset", required=True)
+    docile_load = load_datasets.add_parser(
+        "docile",
+        help="Extract local DocILE files and save unchanged OCR and annotations",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    add_config_options(
+        docile_load,
+        settings.DOCILE,
+        exclude=(
+            "TOKEN",
+            "DESTINATION_PATH",
+            "MINIMUM_ARCHIVE_BYTES",
+            "USE_SNAPPED_BOXES",
+            "CORRECTIONS_PATH",
+        ),
+    )
+    docile_load.add_argument(
+        "--source-path",
+        default=settings.DOCILE.DESTINATION_PATH,
+        help="Directory containing downloaded ZIP archives or extracted original DocILE files.",
+    )
+    docile_load.set_defaults(handler=load_docile)
 
     cache_images = dataset_commands.add_parser(
         "cache-images", help="Cache PDF page images for a downloaded dataset"
@@ -275,7 +378,7 @@ def build_parser(settings: Settings) -> argparse.ArgumentParser:
     docile_images.add_argument(
         "--dataset-path",
         default=settings.DOCILE.OUTPUT_PATH,
-        help="Prepared DocILE .parquet or .csv file containing document_id and pdf_path.",
+        help="Raw or preprocessed DocILE file containing document_id and pdf_path.",
     )
     docile_images.add_argument(
         "--images-path",

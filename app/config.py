@@ -22,15 +22,15 @@ class DocileInvoicesConfig(BaseSettings):
     )
     DESTINATION_PATH: str = Field(
         default="./data/raw/docile",
-        description="Directory for the extracted dataset archive.",
+        description="Directory for downloaded archives and extracted source files.",
     )
     OUTPUT_PATH: str = Field(
         default="./data/raw/docile.parquet",
-        description="Prepared dataset output, with .parquet or .csv extension.",
+        description="Raw DocILE Parquet output written by datasets load docile.",
     )
     SPLIT: DocileSplit = Field(
         default=DocileSplit.TRAINVAL,
-        description="Document split to prepare: train, val, trainval, or test.",
+        description="Source split to download or load: train, val, trainval, or test.",
     )
     USE_SNAPPED_BOXES: bool = Field(
         default=True,
@@ -56,7 +56,7 @@ class BertPytorchConfig(BaseSettings):
     )
 
     DATASET_PATH: str = Field(
-        default="./data/raw/docile.parquet",
+        default="./data/interim/docile.parquet",
         description="Prepared DocILE Parquet containing OCR words and annotations.",
     )
     RESULT_FILENAME: str = Field(
@@ -110,7 +110,7 @@ class LayoutLMConfig(BaseSettings):
     )
 
     DATASET_PATH: str = Field(
-        default="./data/raw/docile.parquet",
+        default="./data/interim/docile.parquet",
         description="Prepared DocILE dataset containing OCR words, boxes, annotations, and PDF paths.",
     )
     MODEL_NAME: str = Field(

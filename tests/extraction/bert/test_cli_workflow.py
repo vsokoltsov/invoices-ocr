@@ -37,13 +37,40 @@ def test_docile_cli_download_and_training_use_shared_dataset(
             "dummy",
             "--destination-path",
             str(docile_archive.parent),
-            "--output-path",
-            str(output),
             "--minimum-archive-bytes",
             "0",
         ]
     )
+    assert capsys.readouterr().out.strip() == str(docile_archive.parent)
+    assert docile_archive.is_file()
+    assert not output.exists()
+    assert not (docile_archive.parent / "annotations").exists()
+    raw_path = tmp_path / "raw-docile.parquet"
+    cli.main(
+        [
+            "datasets",
+            "load",
+            "docile",
+            "--source-path",
+            str(docile_archive.parent),
+            "--output-path",
+            str(raw_path),
+        ]
+    )
+    assert capsys.readouterr().out.strip() == str(raw_path)
+    raw_bytes = raw_path.read_bytes()
+    cli.main(
+        [
+            "preprocess",
+            "bert",
+            "--source-path",
+            str(raw_path),
+            "--output-path",
+            str(output),
+        ]
+    )
     assert capsys.readouterr().out.strip() == str(output)
+    assert raw_path.read_bytes() == raw_bytes
     if line_items_only:
         frame = pd.read_parquet(output)
         for index in frame.index:
@@ -79,7 +106,7 @@ def test_docile_cli_download_and_training_use_shared_dataset(
     cli.main(
         [
             "train",
-            "bert-pytorch",
+            "bert",
             "--dataset-path",
             str(output),
             "--num-epoch",
@@ -122,7 +149,7 @@ def test_docile_cli_download_and_training_use_shared_dataset(
     cli.main(
         [
             "debug",
-            "bert-pytorch",
+            "bert",
             "--checkpoint-dir",
             str(checkpoint),
             "--output-dir",
@@ -141,7 +168,7 @@ def test_docile_cli_download_and_training_use_shared_dataset(
         cli.main(
             [
                 "debug",
-                "bert-pytorch",
+                "bert",
                 "--checkpoint-dir",
                 str(checkpoint),
                 "--output-dir",
@@ -156,7 +183,7 @@ def test_docile_cli_download_and_training_use_shared_dataset(
     cli.main(
         [
             "debug",
-            "bert-pytorch",
+            "bert",
             "--checkpoint-dir",
             str(checkpoint),
             "--output-dir",
@@ -180,7 +207,7 @@ def test_docile_cli_download_and_training_use_shared_dataset(
         cli.main(
             [
                 "debug",
-                "bert-pytorch",
+                "bert",
                 "--checkpoint-dir",
                 str(checkpoint),
                 "--output-dir",
@@ -203,7 +230,7 @@ def test_docile_cli_download_and_training_use_shared_dataset(
     cli.main(
         [
             "debug",
-            "bert-pytorch",
+            "bert",
             "--checkpoint-dir",
             str(checkpoint),
             "--output-dir",
@@ -217,7 +244,9 @@ def test_docile_cli_download_and_training_use_shared_dataset(
     original = pd.read_csv(
         tmp_path / "data/interim/bert_diagnostics/epoch_001/per_entity.csv"
     )
-    baseline = comparison.loc[comparison.decoder.eq("token_argmax")].reset_index(drop=True)
+    baseline = comparison.loc[comparison.decoder.eq("token_argmax")].reset_index(
+        drop=True
+    )
     pd.testing.assert_frame_equal(baseline[original.columns], original)
     for decoder in ("token_argmax", "ocr_word"):
         for filename in (
