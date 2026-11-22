@@ -348,6 +348,37 @@ Parquet preserves nested OCR words; CSV stores those words as JSON strings too.
 
 ## DocILE labels and splits
 
+### Shared evaluation metrics
+
+BERT and LayoutLM use the same `WindowMetrics` accumulator and report format.
+The report identifies its contract as `ocr_word_window_strict_iob2_v1`.
+
+Both models supervise and score only the first subtoken of each word. DocILE
+BERT records use OCR word offsets; standalone span records without OCR words
+use tokenizer word IDs. Continuation subtokens, padding, and special tokens are
+ignored. The default prediction is the first subtoken's argmax. BERT's optional
+OCR-word pooling decoder remains available for debug comparisons.
+
+Each token window is a separate entity sequence. An entity that continues into
+another window starts with a B label in that window's targets. Predictions are
+not repaired: strict seqeval scoring with the IOB2 scheme rejects invalid BIO
+boundaries. Different tokenizers can produce different window boundaries, so
+window-level scores do not guarantee identical evaluation spans across models.
+
+Use `entity_f1` as the primary score and for checkpoint selection. Both reports
+also include `entity_precision`, `entity_recall`, and `entity_report` with per-field
+entity counts and micro, macro, and weighted averages. `word_metrics` contains
+BIO word accuracy, field-word micro precision/recall/F1, field-word macro F1,
+per-field scores, and supervised-word-weighted loss. Field-word metrics merge
+B/I labels, exclude O, and use entity names as field keys. Macro F1 includes
+fields present in gold labels or predictions. Accuracy includes O words.
+
+The test JSON schema, validation history scalar names, and published Test
+scalars are the same for both models. Saved reports from older runs retain their
+original definitions. Re-evaluate checkpoints to obtain new reports; retrain to
+use the shared supervision and checkpoint-selection rules. Compare models on
+the same accepted test documents as well as the same source split.
+
 BERT training requires `document_id`, `ocr_text`, `text_with_boxes`, and
 `json_data` columns. It assigns word labels using annotation boxes, resolves
 names inside addresses, and rejects documents with missing spans, unresolved
