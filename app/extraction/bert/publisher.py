@@ -51,7 +51,7 @@ class ClearMLPublisher(BaseClearMLPublisher):
         """
         return {
             **files,
-            "test_metrics": asdict(EvalResult(**metrics)),
+            "test_metrics": asdict(EvalResult.from_dict(metrics)),
             "config": config,
         }
 
@@ -64,4 +64,4 @@ class ClearMLPublisher(BaseClearMLPublisher):
         Returns:
             BERT token and entity scalars.
         """
-        return EvalResult(**metrics).scalars
+        return EvalResult.from_dict(metrics).scalars

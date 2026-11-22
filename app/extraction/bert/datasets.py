@@ -78,6 +78,39 @@ class InvoiceDataset(Dataset):
                     labels.append(label2id[bio_label])
                     previous_entity = entity_index
 
+                # Score and supervise one token per OCR word, independent of subword count.
+                words = record.get("text_with_boxes")
+                if words is not None:
+                    starts = {
+                        int(word["start"]) for word in words if word["text"].strip()
+                    }
+                    labels = [
+                        label if start in starts and start < end else -100
+                        for label, (start, end) in zip(labels, offsets, strict=True)
+                    ]
+                else:
+                    word_ids = encoded.word_ids(batch_index=window)
+                    labels = [
+                        label
+                        if word_id is not None
+                        and (index == 0 or word_id != word_ids[index - 1])
+                        else -100
+                        for index, (label, word_id) in enumerate(
+                            zip(labels, word_ids, strict=True)
+                        )
+                    ]
+                first = next(
+                    (index for index, label in enumerate(labels) if label != -100), None
+                )
+                if first is not None:
+                    name = next(
+                        name
+                        for name, value in label2id.items()
+                        if value == labels[first]
+                    )
+                    if name.startswith("I-"):
+                        labels[first] = label2id["B-" + name[2:]]
+
                 example = {
                     key: encoded[key][window]
                     for key in tokenizer.model_input_names

@@ -3,7 +3,7 @@ from dataclasses import dataclass
 
 import pandas as pd
 import torch
-from seqeval.metrics.sequence_labeling import get_entities
+from seqeval.scheme import IOB2, Entities
 from transformers import PreTrainedTokenizerBase
 
 from app.extraction.bert.artifacts import BertArtifacts
@@ -57,7 +57,8 @@ class EntityErrorInspector:
         entities = {}
 
         # seqeval returns an inclusive last-token index.
-        for label, first, last in get_entities(labels):
+        for entity in Entities([labels], IOB2).entities[0]:
+            label, first, last = entity.tag, entity.start, entity.end - 1
             start = offsets[first][0]
             end = offsets[last][1]
 
@@ -83,7 +84,7 @@ class EntityErrorInspector:
         Notes:
             Runs inference without gradients and leaves the model in evaluation
             mode. Uses the supervision mask from the token dataset and scores
-            each token window separately with seqeval's default BIO rules.
+            each token window separately with strict IOB2 rules.
         """
         self.model.eval()
 
@@ -179,7 +180,9 @@ class EntityErrorInspector:
                         )
 
         report = (
-            BioEntityScorer().score(actual_sequences, predicted_sequences).per_entity
+            BioEntityScorer(mode="strict", scheme=IOB2)
+            .score(actual_sequences, predicted_sequences)
+            .per_entity
         )
         report_df = pd.DataFrame(report).T
 

@@ -18,7 +18,7 @@ class BertEvaluation(TokenClassificationEvaluation[EvalResult]):
     shared evaluation constructor.
 
     Attributes:
-        metrics: Token and default BIO metric accumulator.
+        metrics: Shared word and strict IOB2 metric accumulator.
         word_decoder: Optional OCR-word pooling strategy; None selects token argmax.
     """
 
@@ -74,7 +74,7 @@ class BertEvaluation(TokenClassificationEvaluation[EvalResult]):
             loader: Evaluated loader; unused for window-level scoring.
 
         Returns:
-            Token loss, accuracy, macro F1, and default BIO entity scores.
+            Word loss, accuracy, field F1, and strict IOB2 entity scores.
 
         Raises:
             ValueError: No supervised tokens have been accumulated.

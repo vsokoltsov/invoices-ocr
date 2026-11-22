@@ -52,7 +52,7 @@ class DiagnosticsWriter(TrainingCallback):
 class OCRInvoiceTraining(TokenClassificationTraining[TrainResult, EvalResult]):
     """Configure shared training for BERT token windows.
 
-    Uses a constant learning rate and seqeval default BIO scoring. Model, loaders,
+    Uses a constant learning rate and strict window-level IOB2 scoring. Model, loaders,
     optimizer, criterion, device, and epoch count are inherited from the shared
     trainer. A checkpoint callback packages weights only on score improvement.
 

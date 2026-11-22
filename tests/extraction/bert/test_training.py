@@ -1,4 +1,5 @@
 import math
+from dataclasses import replace
 from types import SimpleNamespace
 from unittest.mock import Mock
 
@@ -13,7 +14,6 @@ from app.extraction.bert.artifacts import BertArtifacts
 from app.extraction.bert.checkpoint import BertEvaluationRecords, BertPytorchCheckpoint
 from app.extraction.bert.collation import InvoiceDataCollator
 from app.extraction.bert.decoding import OCRWordDecoder
-from app.extraction.bert.metrics import EvalResult
 from app.extraction.bert.training import (
     OCRInvoiceTraining,
 )
@@ -78,7 +78,7 @@ def test_training_updates_weights_and_evaluation_reports_bio_metrics():
     assert not torch.equal(before, trainer.model.embedding.weight)
     result = trainer.eval_one_epoch(1)
     assert result.f1 == result.precision == result.recall == 1.0
-    assert result.token_accuracy == 1.0
+    assert result.word_metrics.bio_word_accuracy == 1.0
     assert result.per_entity["NAME"]["support"] == 1
     assert not trainer.model.training
     assert math.isfinite(result.loss)
@@ -127,14 +127,16 @@ def test_train_restores_best_checkpoint_and_returns_scalar_history(
             trainer.model.embedding.weight.fill_(epoch)
         return TrainResult(loss=1.0 / epoch)
 
+    validation = trainer.eval_one_epoch(0)
+
     def evaluate(epoch):
-        return EvalResult(0.1, 0.9, 0.9, 0.9 if epoch == 1 else 0.5, 1.0, 1.0, {})
+        return replace(validation, entity_f1=0.9 if epoch == 1 else 0.5)
 
     monkeypatch.setattr(trainer, "train_one_epoch", train_epoch)
     monkeypatch.setattr(trainer, "eval_one_epoch", evaluate)
     history = trainer.train()
     pd.testing.assert_frame_equal(pd.read_csv(trainer.artifacts.history_path), history)
-    assert history["validation_f1"].tolist() == [0.9, 0.5]
+    assert history["validation_entity_f1"].tolist() == [0.9, 0.5]
     assert "validation_per_entity" not in history
     assert torch.all(trainer.model.embedding.weight == 1)
     assert inspected_weights == [1, 2]
@@ -183,11 +185,12 @@ def test_checkpoint_is_saved_only_on_improvement_and_survives_failure(
         return TrainResult(0.1)
 
     monkeypatch.setattr(trainer, "train_one_epoch", train_epoch)
+    validation = trainer.eval_one_epoch(0)
     scores = [0.5, 0.5, 0.8, 0.6]
     monkeypatch.setattr(
         trainer,
         "eval_one_epoch",
-        lambda epoch: EvalResult(0.1, 1.0, 1.0, scores[epoch - 1], 1.0, 1.0, {}),
+        lambda epoch: replace(validation, entity_f1=scores[epoch - 1]),
     )
     if interrupted:
         with pytest.raises(RuntimeError, match="training interrupted"):

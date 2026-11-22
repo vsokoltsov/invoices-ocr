@@ -60,3 +60,23 @@ def test_dataset_retains_all_overflow_windows(fast_tokenizer):
     assert all(
         e["labels"][1] == schema.label2id["B-SELLER_NAME"] for e in dataset.examples
     )
+
+
+def test_ocr_words_are_scored_once_even_when_split_into_multiple_tokens(fast_tokenizer):
+    schema = InvoiceLabelSchema({"invoice.seller_name": "NAME"})
+    # Whitespace tokenization splits punctuation. OCR supplies one word for A-B.
+    record = {
+        "text": "A-B Acme",
+        "entities": [{"start": 0, "end": 8, "label": "invoice.seller_name"}],
+        "text_with_boxes": [
+            {"text": "A-B", "start": 0, "end": 3},
+            {"text": "Acme", "start": 4, "end": 8},
+        ],
+    }
+    dataset = InvoiceDataset(
+        [record], fast_tokenizer, schema.label2id, schema.field_to_entity, max_length=4
+    )
+    labels = [
+        label for sample in dataset for label in sample["labels"] if label != -100
+    ]
+    assert labels == [schema.label2id["B-NAME"], schema.label2id["B-NAME"]]

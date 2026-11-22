@@ -30,8 +30,8 @@ def test_accumulates_masked_tokens_weighted_loss_and_entity_boundaries():
     )
     result = metrics.compute()
     assert result.loss == pytest.approx(0.44)
-    assert result.token_accuracy == pytest.approx(0.8)
-    assert result.token_macro_f1 == pytest.approx(37 / 45)
+    assert result.word_metrics.bio_word_accuracy == pytest.approx(0.8)
+    assert result.word_metrics.field_word_macro_f1 == pytest.approx(0.8)
     assert result.precision == 1
     assert result.recall == 0.5
     assert result.f1 == pytest.approx(2 / 3)
@@ -49,7 +49,7 @@ def test_reset_clears_loss_token_metrics_and_entity_sequences():
     metrics.update(logits_for([[1, 2]]), targets, torch.tensor(0.1))
     result = metrics.compute()
     assert result.loss == pytest.approx(0.1)
-    assert result.f1 == result.token_accuracy == 1
+    assert result.f1 == result.word_metrics.bio_word_accuracy == 1
     assert result.per_entity["NAME"]["support"] == 1
     assert asdict(metrics.compute()) == asdict(result)
 
@@ -63,5 +63,5 @@ def test_decoded_predictions_override_argmax_and_custom_mask_is_respected():
         predictions=torch.tensor([[1, 2, 2]]),
     )
     result = metrics.compute()
-    assert result.f1 == result.token_accuracy == 1
+    assert result.f1 == result.word_metrics.bio_word_accuracy == 1
     assert result.loss == pytest.approx(0.7)

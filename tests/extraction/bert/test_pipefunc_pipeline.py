@@ -155,9 +155,9 @@ def test_graph_trains_reloads_evaluates_and_publishes(
     assert history["epoch"].tolist() == [1]
     assert not torch.equal(initial[0], models[0].classifier.weight)
     metrics = json.loads((directory / "test_metrics.json").read_text())
-    assert 0 <= metrics["f1"] <= 1
+    assert 0 <= metrics["entity_f1"] <= 1
     entity = "ITEM_DESCRIPTION" if line_items_only else "SELLER_NAME"
-    assert metrics["per_entity"][entity]["support"] == 2
+    assert metrics["entity_report"][entity]["support"] == 2
     manifest = json.loads((directory / "split_manifest.json").read_text())
     expected_split = DatasetsSplit.create(make_frame(), params.random_seed)
     assert {key for key, name in manifest.items() if name == "test"} == set(
@@ -169,7 +169,7 @@ def test_graph_trains_reloads_evaluates_and_publishes(
         BertArtifacts(directory), torch.device("cpu")
     ).load()
     assert snapshot["max_length"] == 16
-    assert snapshot["decoder"] == "ocr_word"
+    assert snapshot["decoder"] == "token_argmax"
     assert (
         schema.field_to_entity
         == json.loads((directory / "config.json").read_text())["field_to_entity"]

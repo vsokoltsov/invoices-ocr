@@ -52,14 +52,14 @@ def test_evaluates_without_training_state_and_resets_between_loaders():
     loader = make_loader([make_batch([1, 2, -100])])
     result = evaluator.evaluate(loader, epoch=1)
     assert result.f1 == result.precision == result.recall == 1
-    assert result.token_accuracy == 1
+    assert result.word_metrics.bio_word_accuracy == 1
     assert result.per_entity["NAME"]["support"] == 1
 
     # An earlier evaluation must not contribute to a new loader's scores.
     loader = make_loader([make_batch([0, 0, 0])])
     result = evaluator.evaluate(loader, epoch=2)
     assert result.f1 == 0
-    assert result.token_accuracy == pytest.approx(1 / 3)
+    assert result.word_metrics.bio_word_accuracy == pytest.approx(1 / 3)
     assert result.per_entity["NAME"]["support"] == 0
 
 

@@ -104,7 +104,7 @@ def test_docile_cli_download_and_training_use_shared_dataset(
     assert (checkpoint / "model.pt").is_file()
     snapshot = json.loads((checkpoint / "validation.json").read_text())
     assert snapshot["epoch"] == 1
-    assert snapshot["decoder"] == "ocr_word"
+    assert snapshot["decoder"] == "token_argmax"
     assert snapshot["max_length"] == 32
     assert snapshot["records"][0]["text_with_boxes"]
     if line_items_only:
@@ -217,7 +217,7 @@ def test_docile_cli_download_and_training_use_shared_dataset(
     original = pd.read_csv(
         tmp_path / "data/interim/bert_diagnostics/epoch_001/per_entity.csv"
     )
-    baseline = comparison.loc[comparison.decoder.eq("ocr_word")].reset_index(drop=True)
+    baseline = comparison.loc[comparison.decoder.eq("token_argmax")].reset_index(drop=True)
     pd.testing.assert_frame_equal(baseline[original.columns], original)
     for decoder in ("token_argmax", "ocr_word"):
         for filename in (
