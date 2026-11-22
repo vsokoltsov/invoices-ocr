@@ -55,7 +55,7 @@ class ModelStages:
         frame = self.components.load_source()
         self.components.prepare_run()
         split = DatasetsSplit.create(frame, self.components.random_seed)
-        result = self.components.build_step.build(split)
+        result = self.components.preprocess_step.run(split)
         return PreparedData.for_run(self.components.artifacts.output_dir).save(
             split, result
         )

@@ -7,7 +7,7 @@ from torch.utils.data import DataLoader
 
 from app.datasets.split import DatasetsSplit
 from app.extraction.results import EvaluationResult, TrainingResult
-from app.pipelines.builder import BuildResult
+from app.pipelines.preprocess import PreprocessResult
 
 
 @dataclass
@@ -16,7 +16,7 @@ class TrainingPipeline:
 
     Attributes:
         random_seed: Seed used for document splitting.
-        build: Step preparing records from source document partitions.
+        preprocess: Step preparing records from source document partitions.
         dataloaders: Step constructing split loaders from prepared records.
         train: Model-specific training step; its signature defines dependencies.
         evaluate: Step evaluating the saved best checkpoint.
@@ -24,8 +24,8 @@ class TrainingPipeline:
     """
 
     random_seed: int
-    build: Callable[[DatasetsSplit], BuildResult]
-    dataloaders: Callable[[BuildResult], dict[str, DataLoader]]
+    preprocess: Callable[[DatasetsSplit], PreprocessResult]
+    dataloaders: Callable[[PreprocessResult], dict[str, DataLoader]]
     train: Callable[..., TrainingResult]
     evaluate: Callable[[TrainingResult, dict[str, DataLoader]], EvaluationResult]
     publish: Callable[[EvaluationResult], str]
@@ -45,7 +45,7 @@ class TrainingPipeline:
         pipeline = Pipeline(
             [
                 PipeFunc(DatasetsSplit.create, output_name="split"),
-                PipeFunc(self.build, output_name="build_result"),
+                PipeFunc(self.preprocess, output_name="preprocess_result"),
                 PipeFunc(self.dataloaders, output_name="dataloaders"),
                 PipeFunc(self.train, output_name="train_result"),
                 PipeFunc(self.evaluate, output_name="evaluation_result"),

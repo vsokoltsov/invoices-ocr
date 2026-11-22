@@ -8,10 +8,10 @@ from transformers import set_seed
 from app.datasets.split import DatasetsSplit
 from app.extraction.artifacts import RunArtifacts
 from app.extraction.results import TrainingResult
-from app.pipelines.builder import BuildPartitions, BuildResult
 from app.pipelines.dataloader import DataLoaders
 from app.pipelines.evaluate import EvaluateCheckpoint
 from app.pipelines.pipeline import TrainingPipeline
+from app.pipelines.preprocess import PreprocessPartitions, PreprocessResult
 from app.pipelines.publish import PublishModel
 
 
@@ -21,7 +21,7 @@ class ModelPipeline(ABC):
     Attributes:
         artifacts: Model-specific output storage.
         device: Resolved execution device.
-        build_step: Model-specific record preparation.
+        preprocess_step: Model-specific record preparation.
         loader_step: Model-specific dataset and loader construction.
         evaluation_step: Saved-checkpoint test evaluation.
         publisher_step: Model-specific ClearML publication.
@@ -29,7 +29,7 @@ class ModelPipeline(ABC):
 
     artifacts: RunArtifacts
     device: torch.device
-    build_step: BuildPartitions
+    preprocess_step: PreprocessPartitions
     loader_step: DataLoaders
     evaluation_step: EvaluateCheckpoint
     publisher_step: PublishModel
@@ -54,14 +54,14 @@ class ModelPipeline(ABC):
     def train_prepared(
         self,
         dataloaders: dict[str, DataLoader],
-        build_result: BuildResult,
+        preprocess_result: PreprocessResult,
         split: DatasetsSplit,
     ) -> TrainingResult:
         """Train using prepared records, loaders, and original document partitions.
 
         Args:
             dataloaders: Training and evaluation loaders.
-            build_result: Prepared model-specific records.
+            preprocess_result: Prepared model-specific records.
             split: Original source document partitions.
 
         Returns:
@@ -85,7 +85,7 @@ class ModelPipeline(ABC):
         self.prepare_run()
         return TrainingPipeline(
             random_seed=self.random_seed,
-            build=self.build_step.build,
+            preprocess=self.preprocess_step.run,
             dataloaders=self.loader_step.build,
             train=self.train_prepared,
             evaluate=self.evaluation_step.eval,

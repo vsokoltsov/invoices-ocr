@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 
 from app.datasets.split import DatasetsSplit
-from app.pipelines.builder import BuildResult
+from app.pipelines.preprocess import PreprocessResult
 
 
 @dataclass(frozen=True)
@@ -54,7 +54,7 @@ class PreparedData:
             return value.item()
         return value
 
-    def save(self, split: DatasetsSplit, result: BuildResult) -> str:
+    def save(self, split: DatasetsSplit, result: PreprocessResult) -> str:
         """Persist preparation outputs without serializing models or dataloaders.
 
         Args:
@@ -85,7 +85,7 @@ class PreparedData:
             )
         return str(self.directory.resolve())
 
-    def load(self) -> tuple[DatasetsSplit, BuildResult]:
+    def load(self) -> tuple[DatasetsSplit, PreprocessResult]:
         """Restore prepared records for a fresh training or evaluation process.
 
         Returns:
@@ -105,6 +105,6 @@ class PreparedData:
                 encoding="utf-8"
             )
             rejected[name] = pd.read_json(StringIO(text), orient="table")
-        return DatasetsSplit(**source), BuildResult(
+        return DatasetsSplit(**source), PreprocessResult(
             DatasetsSplit(**records), DatasetsSplit(**rejected)
         )

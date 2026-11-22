@@ -7,7 +7,7 @@ import pandas as pd
 import torch
 from torch.utils.data import DataLoader, Dataset
 
-from app.pipelines.builder import BuildResult
+from app.pipelines.preprocess import PreprocessResult
 
 
 @dataclass(kw_only=True)
@@ -63,18 +63,18 @@ class DataLoaders(ABC):
             options["generator"] = torch.Generator().manual_seed(self.random_seed)
         return options
 
-    def build(self, build_result: BuildResult) -> dict[str, DataLoader]:
+    def build(self, preprocess_result: PreprocessResult) -> dict[str, DataLoader]:
         """Create shuffled training and ordered evaluation loaders.
 
         Args:
-            build_result: Prepared records produced by the builder step.
+            preprocess_result: Prepared records produced by the preprocessing step.
 
         Returns:
             Loaders keyed by train, val, and test.
         """
         return {
             name: self.create_loader(
-                getattr(build_result.records, name), training=name == "train"
+                getattr(preprocess_result.records, name), training=name == "train"
             )
             for name in ("train", "val", "test")
         }
