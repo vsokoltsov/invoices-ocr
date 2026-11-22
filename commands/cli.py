@@ -204,6 +204,49 @@ def preprocess_model(args: argparse.Namespace, settings: Settings) -> None:
     print(path)
 
 
+def upload_clearml_dataset(args: argparse.Namespace, settings: Settings) -> None:
+    """Upload existing raw data, processed data, or cached images.
+
+    Args:
+        args: Dataset kind, local paths, parent ID, and ClearML storage settings.
+        settings: Application settings; CLI defaults have already been resolved.
+    """
+    from app.datasets.clearml import (
+        DocileImagesDatasetUpload,
+        PreprocessedDocileDatasetUpload,
+        RawDocileDatasetUpload,
+    )
+
+    options = {
+        "project": args.project,
+        "name": args.name,
+        "output_uri": args.output_uri,
+    }
+    if args.dataset == "docile":
+        upload = RawDocileDatasetUpload(dataset_path=Path(args.dataset_path), **options)
+    elif args.dataset == "docile-preprocessed":
+        upload = PreprocessedDocileDatasetUpload(
+            dataset_path=Path(args.dataset_path), parent_id=args.parent_id, **options
+        )
+    else:
+        upload = DocileImagesDatasetUpload(
+            parent_id=args.parent_id, images_path=Path(args.images_path), **options
+        )
+    print(upload.run())
+
+
+def download_clearml_dataset(args: argparse.Namespace, settings: Settings) -> None:
+    """Download a dataset version and its parents into a local directory.
+
+    Args:
+        args: Exact dataset ID and local destination directory.
+        settings: Application settings; CLI defaults have already been resolved.
+    """
+    from app.datasets.clearml import ClearMLDatasetDownload
+
+    print(ClearMLDatasetDownload(args.dataset_id, Path(args.destination_path)).run())
+
+
 def cache_docile_images(args: argparse.Namespace, settings: Settings) -> None:
     from app.datasets.docile.images import DocileImageCache
 
@@ -338,6 +381,59 @@ def build_parser(settings: Settings) -> argparse.ArgumentParser:
         help="Download token; defaults to the DOCILE_TOKEN environment setting.",
     )
     docile.set_defaults(handler=download_docile)
+
+    clearml_download = dataset_names.add_parser(
+        "clearml", help="Download a ClearML dataset and its inherited files"
+    )
+    clearml_download.add_argument(
+        "--dataset-id", required=True, help="Finalized ClearML dataset ID."
+    )
+    clearml_download.add_argument(
+        "--destination-path", required=True, help="New or empty local directory."
+    )
+    clearml_download.set_defaults(handler=download_clearml_dataset)
+
+    upload = dataset_commands.add_parser(
+        "upload", help="Upload versioned datasets to ClearML"
+    )
+    upload_names = upload.add_subparsers(dest="dataset", required=True)
+    for kind in ("docile", "docile-preprocessed", "docile-images"):
+        target = upload_names.add_parser(
+            kind,
+            help=f"Upload existing {kind} files",
+        )
+        target.add_argument(
+            "--project",
+            default=settings.CLEARML_DATASET.PROJECT,
+            help="ClearML dataset project.",
+        )
+        target.add_argument("--name", required=True, help="ClearML dataset name.")
+        target.add_argument(
+            "--output-uri",
+            default=settings.CLEARML_DATASET.OUTPUT_URI,
+            help="Upload storage URI; empty uses ClearML default storage.",
+        )
+        if kind in {"docile", "docile-preprocessed"}:
+            target.add_argument(
+                "--dataset-path",
+                default=settings.DOCILE.OUTPUT_PATH
+                if kind == "docile"
+                else settings.BERT_PYTORCH.DATASET_PATH,
+                help="Existing raw or preprocessed Parquet file.",
+            )
+        if kind != "docile":
+            target.add_argument(
+                "--parent-id",
+                required=True,
+                help="Finalized ClearML dataset containing raw data and PDFs.",
+            )
+        if kind == "docile-images":
+            target.add_argument(
+                "--images-path",
+                default=settings.LAYOUTLM.IMAGES_PATH,
+                help="Cache directory containing dpi_150.",
+            )
+        target.set_defaults(handler=upload_clearml_dataset)
 
     load = dataset_commands.add_parser(
         "load", help="Load local source data into raw Parquet"

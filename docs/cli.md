@@ -125,6 +125,51 @@ document stops the command with its ID and PDF path; completed cache entries rem
 The command prints the absolute cache directory when it finishes. It does not
 download data, run OCR, or load a model.
 
+## Upload and download ClearML datasets
+
+See [ClearML datasets](clearml_datasets.md) for the full parent and child workflow
+and portable PDF paths.
+
+```sh
+uv run --env-file .env python -m commands.cli datasets upload docile \
+  --dataset-path ./data/raw/docile.parquet \
+  --project ocr --name docile-trainval-raw --output-uri ""
+
+uv run --env-file .env python -m commands.cli datasets upload docile-preprocessed \
+  --dataset-path ./data/interim/docile.parquet \
+  --parent-id "$RAW_ID" --project ocr --name docile-trainval-preprocessed
+
+uv run --env-file .env python -m commands.cli datasets upload docile-images \
+  --parent-id "$PREPROCESSED_ID" --images-path ./data/interim/docile_images \
+  --project ocr --name docile-trainval-images --output-uri ""
+
+uv run --env-file .env python -m commands.cli datasets download clearml \
+  --dataset-id "$IMAGES_ID" --destination-path ./data/docile-bundle
+```
+
+| Command or option | Meaning |
+| --- | --- |
+| `upload docile --dataset-path` | Raw Parquet and its referenced PDFs; default: `DOCILE_OUTPUT_PATH`. |
+| `upload docile-preprocessed --dataset-path` | Existing processed Parquet; default: `BERTPYTORCH_DATASET_PATH`. |
+| `upload docile-preprocessed --parent-id` | Required finalized parent with raw data and PDFs. |
+| `upload docile-images --parent-id` | Required finalized parent with raw data and PDFs; can include processed data. |
+| `upload docile-images --images-path` | Complete cache with `dpi_150/`; default: `LAYOUTLM_IMAGES_PATH`. |
+| `--project` | Dataset project; default: `CLEARML_DATASET_PROJECT`, or `ocr`. |
+| `--name` | Required name for the new dataset. |
+| `--output-uri` | Upload storage; default: `CLEARML_DATASET_OUTPUT_URI`. Empty uses ClearML default storage. |
+| `download clearml --dataset-id` | Required exact finalized dataset ID. |
+| `download clearml --destination-path` | Required new or empty directory. |
+
+Uploads print finalized IDs. Set `RAW_ID`, `PREPROCESSED_ID`, and `IMAGES_ID`
+to the corresponding IDs. Downloads print the destination directory; SDK progress
+logs can also appear. Upload commands store existing files without running
+preprocessing. Preprocessing continues to read and write local Parquet files.
+
+A child download includes inherited files: `raw.parquet`, `pdfs/`, optionally
+`preprocessed.parquet`, and `images/`. Uploaded Parquet copies store relative PDF
+paths. Download converts these to absolute paths in the local copies so existing
+preprocessing, caching, and training commands can use them directly.
+
 ## Train BERT with plain PyTorch
 
 Train one model from prepared DocILE Parquet through the PipeFunc pipeline

@@ -24,6 +24,10 @@ and configuring `.env` from [`.env.sample`](.env.sample).
 | --- | --- |
 | `uv run python -m commands.cli datasets download docile` | Download original DocILE ZIP archives. |
 | `uv run python -m commands.cli datasets load docile` | Save original DocILE OCR and annotations to raw Parquet. |
+| `uv run python -m commands.cli datasets upload docile --name NAME` | Publish raw Parquet and PDFs to ClearML. |
+| `uv run python -m commands.cli datasets upload docile-preprocessed --name NAME --parent-id ID` | Publish an existing processed Parquet as a child dataset. |
+| `uv run python -m commands.cli datasets upload docile-images --name NAME --parent-id ID` | Publish cached images as a child dataset. |
+| `uv run python -m commands.cli datasets download clearml --dataset-id ID --destination-path PATH` | Download a dataset with its inherited files. |
 | `uv run python -m commands.cli preprocess bert` | Export preprocessed DocILE documents to the BERT dataset path. |
 | `uv run python -m commands.cli preprocess layoutlm` | Export preprocessed DocILE documents to the LayoutLM dataset path. |
 | `uv run python -m commands.cli datasets cache-images docile` | Cache PDF page images for LayoutLM training. |
@@ -52,3 +56,6 @@ uv run pytest
 uv run ruff check .
 uv run ty check .
 ```
+
+See [ClearML datasets](docs/clearml_datasets.md) for versioned raw data, image caches,
+and portable PDF paths.

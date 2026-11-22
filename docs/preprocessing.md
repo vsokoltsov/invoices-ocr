@@ -152,3 +152,12 @@ from the original dataset.
 Record the source dataset version, preprocessing settings, code commit, and
 split manifest with each experiment. Preserve the original data so another
 preprocessing version can be compared against the same inputs.
+
+## ClearML storage
+
+ClearML storage is separate from preprocessing. Upload commands store existing
+raw Parquet, processed Parquet, PDFs, and image caches as related datasets.
+Preprocessing continues to read and write local files and does not need ClearML.
+Upload converts PDF paths in temporary copies. Download sets local absolute PDF
+paths so the existing preprocessing and training commands can use either Parquet
+file directly. See [ClearML datasets](clearml_datasets.md).

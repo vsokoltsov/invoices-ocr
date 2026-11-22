@@ -222,6 +222,19 @@ class ClearMLPipelineConfig(BaseSettings):
     )
 
 
+class ClearMLDatasetConfig(BaseSettings):
+    """Configure storage for versioned invoice datasets."""
+
+    model_config = SettingsConfigDict(
+        env_prefix="CLEARML_DATASET_", env_file=".env", extra="ignore"
+    )
+    PROJECT: str = Field(default="ocr", description="ClearML project for datasets.")
+    OUTPUT_URI: str = Field(
+        default="",
+        description="Upload storage URI; empty uses ClearML default storage.",
+    )
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -238,6 +251,7 @@ class Settings(BaseSettings):
     CLEARML_PIPELINE: ClearMLPipelineConfig = Field(
         default_factory=ClearMLPipelineConfig
     )
+    CLEARML_DATASET: ClearMLDatasetConfig = Field(default_factory=ClearMLDatasetConfig)
     RANDOM_SEED: int = 42
     DOCILE_TOKEN: str = Field(default="", repr=False)
 
