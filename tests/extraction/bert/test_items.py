@@ -5,7 +5,7 @@ import pandas as pd
 import pytest
 
 from app.extraction.bert.datasets import InvoiceDataset
-from app.extraction.bert.item_builder import ItemRecordBuilder
+from app.extraction.bert.item_preprocess import ItemPreprocessor
 
 
 def item_frame():
@@ -62,9 +62,9 @@ def item_frame():
 
 
 def test_item_only_records_keep_membership_and_use_shared_token_dataset(fast_tokenizer):
-    builder = ItemRecordBuilder()
-    records, rejected = builder.build(item_frame())
-    schema = builder.label_schema
+    preprocessor = ItemPreprocessor()
+    records, rejected = preprocessor.run(item_frame())
+    schema = preprocessor.label_schema
     assert not rejected
     assert schema.num_labels == 9
     entities = records[0]["entities"]
@@ -90,7 +90,7 @@ def test_item_only_records_keep_membership_and_use_shared_token_dataset(fast_tok
 @pytest.mark.parametrize(
     "failure", ["overlap", "missing_span", "invalid_offsets", "no_selected_annotations"]
 )
-def test_item_builder_reports_conflicts_missing_words_and_invalid_offsets(failure):
+def test_item_preprocessor_reports_conflicts_missing_words_and_invalid_offsets(failure):
     frame = item_frame()
     data = frame.iloc[0]["json_data"]
     if failure == "overlap":
@@ -104,7 +104,7 @@ def test_item_builder_reports_conflicts_missing_words_and_invalid_offsets(failur
         frame.iloc[0]["text_with_boxes"][0]["end"] = 999
     else:
         data["items"] = []
-    records, rejected = ItemRecordBuilder().build(frame)
+    records, rejected = ItemPreprocessor().run(frame)
     assert not records
     assert failure in {issue["status"] for issue in rejected[0]["issues"]}
     if failure == "overlap":
@@ -123,7 +123,7 @@ def test_item_description_fragments_keep_id_across_pages():
     description["pages"].append(1)
     description["source_values"].extend(other["source_values"])
     frame.iloc[0]["text_with_boxes"][1]["page"] = 1
-    records, rejected = ItemRecordBuilder().build(frame)
+    records, rejected = ItemPreprocessor().run(frame)
     assert not rejected
     descriptions = [
         e for e in records[0]["entities"] if e["label"] == "items.description"

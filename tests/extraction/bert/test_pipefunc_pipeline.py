@@ -19,9 +19,9 @@ from app.extraction.bert.collation import InvoiceDataCollator
 from app.extraction.bert.datasets import InvoiceDataset
 from app.extraction.results import TrainingResult
 from app.pipelines.bert import pipeline as pipeline_module
-from app.pipelines.bert.builder import InvoicesBuilder
 from app.pipelines.bert.evaluate import EvaluateTraining
 from app.pipelines.bert.pipeline import BertTrainingPipeline
+from app.pipelines.bert.preprocess import BertPreprocess
 
 
 @pytest.fixture
@@ -248,15 +248,15 @@ def test_bad_inputs_fail_before_loading_models(params, monkeypatch, failure):
     factory.assert_not_called()
 
 
-def test_builder_saves_rejections_and_refuses_empty_partitions(tmp_path):
+def test_preprocessor_saves_rejections_and_refuses_empty_partitions(tmp_path):
     frame = make_frame()
     frame["document_id"] = [f"doc-{i}" for i in range(len(frame))]
     split = DatasetsSplit.create(frame, 42)
-    builder = Mock()
-    builder.build.return_value = (
+    preprocessor = Mock()
+    preprocessor.run.return_value = (
         [],
         [{"row_index": 0, "issues": [{"status": "missing"}]}],
     )
     with pytest.raises(ValueError, match="No accepted records in train"):
-        InvoicesBuilder(builder, BertArtifacts(tmp_path)).build(split)
+        BertPreprocess(preprocessor, BertArtifacts(tmp_path)).run(split)
     assert len(pd.read_csv(tmp_path / "train_rejected.csv")) == 1

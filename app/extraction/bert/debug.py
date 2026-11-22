@@ -8,11 +8,11 @@ import torch
 from app.aggregates.bert.params import BertPytorchDebugParams
 from app.datasets.split import DatasetsSplit
 from app.extraction.bert.artifacts import BertArtifacts
-from app.extraction.bert.builder import InvoiceRecordBuilder
 from app.extraction.bert.checkpoint import BertCheckpointLoader, BertEvaluationRecords
 from app.extraction.bert.decoding import OCRWordDecoder
 from app.extraction.bert.inspector import EntityErrorInspector
-from app.extraction.bert.item_builder import ItemRecordBuilder
+from app.extraction.bert.item_preprocess import ItemPreprocessor
+from app.extraction.bert.preprocess import InvoicePreprocessor
 
 
 @dataclass
@@ -45,15 +45,12 @@ class BertPytorchDebugPipeline:
                 "No saved test split; pass --dataset-path and the original --random-seed"
             )
         frame = pd.read_parquet(params.dataset_path)
-        frame["json_data"] = frame["json_data"].map(
-            lambda value: json.loads(value) if isinstance(value, str) else value
-        )
-        builder = (
-            ItemRecordBuilder(schema)
+        preprocessor = (
+            ItemPreprocessor(schema)
             if all(path.startswith("items.") for path in schema.field_to_entity)
-            else InvoiceRecordBuilder(schema)
+            else InvoicePreprocessor(schema)
         )
-        records, _ = builder.build(frame)
+        records, _ = preprocessor.run(frame)
         if checkpoint_artifacts.has_manifest():
             membership = checkpoint_artifacts.load_manifest()
             by_id = {record["document_id"]: record for record in records}
@@ -69,8 +66,8 @@ class BertPytorchDebugPipeline:
             ]
         else:
             partitions = DatasetsSplit.create(frame, params.random_seed)
-            rebuilt_validation, _ = builder.build(partitions.val)
-            test, _ = builder.build(partitions.test)
+            rebuilt_validation, _ = preprocessor.run(partitions.val)
+            test, _ = preprocessor.run(partitions.test)
         # Compare supervised inputs, not only IDs, before trusting reconstructed membership.
         keys = ("document_id", "text", "entities", "ignored_regions")
 
