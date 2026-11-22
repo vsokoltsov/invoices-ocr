@@ -37,6 +37,8 @@ def test_download_stream_cache_and_http_error_redaction(tmp_path, monkeypatch, s
         return
     assert downloader.download() == tmp_path
     assert len(requests) == 1
+    assert (tmp_path / "annotated-trainval.zip").is_file()
+    assert not (tmp_path / "sample.txt").exists()
     # A cached archive must be usable without making a request.
     with client_factory(transport=httpx.MockTransport(respond)) as cached_client:
         downloader._download_archive(
@@ -55,7 +57,7 @@ def test_archive_selection_and_validation(tmp_path):
     assert (
         len(DocileDatasetDownloader("dummy", dataset="baselines").archive_names()) == 9
     )
-    assert len(DocileDataset) == 222
+    assert DocileDatasetDownloader("dummy", dataset=DocileDataset.TEST).archive_names() == ["test"]
     with pytest.raises(ValueError):
         DocileDatasetDownloader("")
     with pytest.raises(ValueError):

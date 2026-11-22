@@ -10,8 +10,8 @@ from app.datasets.docile.converter import DocileAnnotationConverter
 from app.datasets.docile.corrections import DocileAnnotationCorrections
 from app.datasets.docile.downloader import DocileDatasetDownloader
 from app.datasets.docile.loader import DocileDatasetLoader
-from app.datasets.docile.preparation import DocileInvoicesPreparation
-from app.extraction.bert.builder import InvoiceRecordBuilder
+from app.datasets.docile.preprocess import DocilePreprocess
+from app.extraction.bert.preprocess import InvoicePreprocessor
 from commands import cli
 
 
@@ -171,17 +171,12 @@ def test_cli_rebuilds_cached_data_with_corrections_and_audit(
     monkeypatch.setattr(cli, "get_settings", lambda: settings)
     output = tmp_path / f"prepared.{extension}"
     args = [
-        "datasets",
-        "download",
-        "docile",
-        "--token",
-        "dummy",
-        "--destination-path",
+        "preprocess",
+        "bert",
+        "--source-path",
         str(docile_archive.parent),
         "--output-path",
         str(output),
-        "--minimum-archive-bytes",
-        "0",
     ]
     cli.main(args)
     source_path = docile_archive.parent / "annotations/doc-0.json"
@@ -198,7 +193,7 @@ def test_cli_rebuilds_cached_data_with_corrections_and_audit(
     assert (
         DocileDatasetLoader(docile_archive.parent)
         .load("doc-0")
-        .json_data["invoice"]["seller_name"]["value"]
+        .json_data["field_extractions"][0]["text"]
         == "Acme Corporation"
     )
     frame = pd.read_parquet(output) if extension == "parquet" else pd.read_csv(output)
@@ -210,7 +205,7 @@ def test_cli_rebuilds_cached_data_with_corrections_and_audit(
     frame["json_data"] = frame["json_data"].map(json.loads)
     if extension == "csv":
         frame["text_with_boxes"] = frame["text_with_boxes"].map(json.loads)
-    records, rejected = InvoiceRecordBuilder().build(frame)
+    records, rejected = InvoicePreprocessor().run(frame)
     assert not rejected
     corrected_record = next(
         record for record in records if record["document_id"] == "doc-0"
@@ -227,8 +222,8 @@ def test_cli_rebuilds_cached_data_with_corrections_and_audit(
 def test_invalid_correction_path_fails_before_download(tmp_path, monkeypatch):
     download = Mock(side_effect=AssertionError("Must not download"))
     monkeypatch.setattr(DocileDatasetDownloader, "download", download)
-    preparation = DocileInvoicesPreparation(
-        DocileDatasetDownloader("dummy", target_dir=tmp_path / "raw", unzip=True),
+    preparation = DocilePreprocess(
+        tmp_path / "raw",
         tmp_path / "output.csv",
         corrections_path=tmp_path / "missing.json",
     )

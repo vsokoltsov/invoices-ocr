@@ -2,7 +2,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
 from urllib.parse import quote
-from zipfile import ZipFile, is_zipfile
+from zipfile import is_zipfile
 
 import httpx
 from tqdm.std import tqdm
@@ -27,6 +27,7 @@ DocileDataset = StrEnum(
     list(
         {
             "ANNOTATED_TRAINVAL": "annotated-trainval",
+            "TEST": "test",
             "SYNTHETIC": "synthetic",
             "UNLABELED": "unlabeled",
             "UNLABELED_ANNOTATIONS": "unlabeled-annotations",
@@ -65,7 +66,6 @@ class DocileDatasetDownloader:
     token: str = field(repr=False)
     dataset: DocileDataset = DocileDataset.ANNOTATED_TRAINVAL
     target_dir: Path = Path("data/docile")
-    unzip: bool = False
     without_pdfs: bool = False
     minimum_archive_bytes: int = 100_000_000
 
@@ -74,14 +74,12 @@ class DocileDatasetDownloader:
         token: str,
         dataset: DocileDataset | str = DocileDataset.ANNOTATED_TRAINVAL,
         target_dir: str | Path = "data/docile",
-        unzip: bool = False,
         without_pdfs: bool = False,
         minimum_archive_bytes: int = 100_000_000,
     ) -> None:
         self.token = token
         self.dataset = DocileDataset(dataset)
         self.target_dir = Path(target_dir).expanduser()
-        self.unzip = unzip
         self.without_pdfs = without_pdfs
         self.minimum_archive_bytes = minimum_archive_bytes
         self.__post_init__()
@@ -196,7 +194,11 @@ class DocileDatasetDownloader:
         return archive_path
 
     def download(self) -> Path:
-        """Download archives; optionally extract and delete each ZIP."""
+        """Download and validate archives without extracting or processing them.
+
+        Returns:
+            Directory containing downloaded ZIP files.
+        """
         self.target_dir.mkdir(parents=True, exist_ok=True)
 
         with httpx.Client(
@@ -207,12 +209,6 @@ class DocileDatasetDownloader:
                 self.archive_names(),
                 self.download_urls(),
             ):
-                archive_path = self._download_archive(client, name, url)
-
-                if self.unzip:
-                    with ZipFile(archive_path) as archive:
-                        archive.extractall(self.target_dir)
-
-                    archive_path.unlink()
+                self._download_archive(client, name, url)
 
         return self.target_dir
