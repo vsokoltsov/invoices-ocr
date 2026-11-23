@@ -7,6 +7,7 @@ from transformers import set_seed
 
 from app.aggregates.bert.params import BertPytorchParams
 from app.aggregates.layoutlm.params import LayoutLMTrainingParams
+from app.datasets.source import DatasetSource
 from app.datasets.split import DatasetsSplit
 from app.extraction.results import EvaluationResult, TrainingResult
 from app.pipelines.bert.pipeline import BertTrainingPipeline
@@ -60,6 +61,33 @@ class ModelStages:
             split, result
         )
 
+    def load_prepared(self, prepared: str):
+        """Load handoff records and resolve remote PDF paths on this worker.
+
+        Args:
+            prepared: Shared directory written by the preparation stage.
+
+        Returns:
+            Source splits and prepared records with this worker's PDF paths.
+        """
+        split, result = PreparedData(Path(prepared)).load()
+        params = getattr(self.components, "params", None)
+        if params is not None and DatasetSource(params.dataset_path).is_clearml:
+            source = self.components.load_source()
+            if "pdf_path" in source:
+                paths = source.set_index("document_id")["pdf_path"]
+                for partitions in (split, result.records):
+                    for name in ("train", "val", "test"):
+                        frame = getattr(partitions, name)
+                        if "pdf_path" in frame:
+                            local_paths = frame["document_id"].map(paths)
+                            if local_paths.isna().any():
+                                raise ValueError(
+                                    "Prepared records do not match the ClearML dataset"
+                                )
+                            frame["pdf_path"] = local_paths
+        return split, result
+
     def train(self, prepared: str) -> dict[str, str]:
         """Train a model from preparation outputs in a fresh process.
 
@@ -69,7 +97,7 @@ class ModelStages:
         Returns:
             Serializable best-checkpoint and history paths.
         """
-        split, result = PreparedData(Path(prepared)).load()
+        split, result = self.load_prepared(prepared)
         loaders = self.components.loader_step.build(result)
         trained = self.components.train_prepared(loaders, result, split)
         return {
@@ -87,7 +115,7 @@ class ModelStages:
         Returns:
             Serializable checkpoint and test-metric paths.
         """
-        _, result = PreparedData(Path(prepared)).load()
+        _, result = self.load_prepared(prepared)
         loaders = {
             "test": self.components.loader_step.create_loader(
                 result.records.test, training=False

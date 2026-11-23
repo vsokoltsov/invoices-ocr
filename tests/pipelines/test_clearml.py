@@ -286,3 +286,76 @@ def test_layoutlm_cli_builds_and_starts_clearml_pipeline(
         run_pipeline_steps_locally=execution == PipelineExecution.LOCAL
     )
     assert capsys.readouterr().out.strip() == "layoutlm-pipeline-id"
+
+
+@pytest.mark.parametrize("model", ["bert", "layoutlm"])
+def test_pipeline_keeps_remote_inputs_for_worker_resolution(model):
+    settings = Settings(_env_file=None)
+    args = cli.build_parser(settings).parse_args(
+        [
+            "pipeline",
+            model,
+            "--dataset-path",
+            "clearml://processed-id/preprocessed.parquet",
+            *(
+                ["--images-path", "clearml://images-id/images"]
+                if model == "layoutlm"
+                else []
+            ),
+        ]
+    )
+    if model == "bert":
+        pipeline = BertClearMLPipeline(
+            cli.bert_params(args), ClearMLPipelineParams()
+        ).build()
+    else:
+        pipeline = LayoutLMClearMLPipeline(
+            cli.layoutlm_params(args), ClearMLPipelineParams()
+        ).build()
+    params = pipeline.runs[0].params
+    assert params["dataset_path"] == "clearml://processed-id/preprocessed.parquet"
+    if model == "layoutlm":
+        assert params["images_path"] == "clearml://images-id/images"
+
+
+def test_worker_rebases_prepared_pdf_paths_without_changing_handoff(tmp_path):
+    from types import SimpleNamespace
+    from typing import cast
+
+    import pandas as pd
+
+    from app.datasets.split import DatasetsSplit
+    from app.pipelines.clearml.artifacts import PreparedData
+    from app.pipelines.clearml.stages import ModelStages
+    from app.pipelines.components import ModelPipeline
+    from app.pipelines.preprocess import PreprocessResult
+
+    frame = pd.DataFrame(
+        {"document_id": ["doc"], "pdf_path": ["/other-worker/pdfs/doc.pdf"]}
+    )
+    rejected = pd.DataFrame(columns=pd.Index(["document_id", "reason"]))
+    store = PreparedData(tmp_path / "handoff")
+    store.save(
+        DatasetsSplit(frame, frame, frame),
+        PreprocessResult(
+            DatasetsSplit(frame, frame, frame),
+            DatasetsSplit(rejected, rejected, rejected),
+        ),
+    )
+    local_path = str(tmp_path / "worker-cache" / "pdfs" / "doc.pdf")
+    components = SimpleNamespace(
+        params=SimpleNamespace(dataset_path="clearml://id/preprocessed.parquet"),
+        load_source=Mock(
+            return_value=pd.DataFrame(
+                {"document_id": ["doc"], "pdf_path": [local_path]}
+            )
+        ),
+    )
+    split, result = ModelStages(cast(ModelPipeline, components)).load_prepared(
+        str(store.directory)
+    )
+    for name in ("train", "val", "test"):
+        assert getattr(split, name).document_id.tolist() == ["doc"]
+        assert getattr(result.records, name).pdf_path.tolist() == [local_path]
+    _, unchanged = store.load()
+    assert unchanged.records.train.pdf_path.tolist() == ["/other-worker/pdfs/doc.pdf"]

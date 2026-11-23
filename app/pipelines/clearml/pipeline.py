@@ -11,6 +11,7 @@ from app.aggregates.pipeline import (
     ClearMLPipelineParams,
     PipelineExecution,
 )
+from app.datasets.source import DatasetSource
 from app.pipelines.clearml.stages import (
     evaluate_model,
     prepare_model,
@@ -26,7 +27,7 @@ class ModelRun:
     Attributes:
         name: Unique branch name used to prefix stage task names.
         model: Component type used by the workers.
-        params: Model settings containing absolute input and output paths.
+        params: Model settings containing local paths or ClearML input references.
     """
 
     name: str
@@ -116,8 +117,10 @@ class ClearMLTrainingPipeline:
         Raises:
             RuntimeError: A pipeline stage failed or execution was aborted.
 
-        Agent execution requires the same dataset, PDFs, cache, and run paths on
-        every worker. The project and its dependencies must be installed there.
+        Agent execution requires shared preparation and run output paths.
+        ClearML inputs are resolved on each worker. Local dataset and cache
+        paths must be available there. Install the project and dependencies
+        on every worker.
         """
         controller = self.create()
         controller.start_locally(
@@ -175,7 +178,9 @@ class BertClearMLPipeline:
                 "result_filename",
                 "diagnostic_dir",
             ):
-                if values[key]:
+                if values[key] and not (
+                    key == "dataset_path" and DatasetSource(values[key]).is_clearml
+                ):
                     values[key] = str(Path(values[key]).expanduser().resolve())
             runs.append(ModelRun(name, "bert", values))
         return ClearMLTrainingPipeline("bert-training", tuple(runs), self.settings)
@@ -207,6 +212,11 @@ class LayoutLMClearMLPipeline:
         # Keep worker arguments JSON-native; no controller enum classes are needed.
         values["device"] = str(self.params.device)
         for key in ("dataset_path", "output_dir", "checkpoint_path", "images_path"):
+            if (
+                key in {"dataset_path", "images_path"}
+                and DatasetSource(values[key]).is_clearml
+            ):
+                continue
             values[key] = str(Path(values[key]).expanduser().resolve())
         return ClearMLTrainingPipeline(
             "layoutlm-training",
