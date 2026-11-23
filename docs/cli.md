@@ -85,7 +85,7 @@ uv run --env-file .env python -m commands.cli preprocess bert \
 
 | Option | Meaning |
 | --- | --- |
-| `--source-path` | Raw Parquet file; defaults to `DOCILE_OUTPUT_PATH`. |
+| `--source-path` | Raw local Parquet or `clearml://<id>/raw.parquet`; defaults to `DOCILE_OUTPUT_PATH`. |
 | `--output-path` | Export `.parquet` or `.csv`; defaults to `BERTPYTORCH_DATASET_PATH` or `LAYOUTLM_DATASET_PATH`. |
 | `--use-snapped-boxes` / `--no-use-snapped-boxes` | Select snapped geometry when available (default), or original geometry. |
 | `--corrections-path` | Reviewed annotation correction manifest; `""` preserves original labels. |
@@ -169,6 +169,35 @@ A child download includes inherited files: `raw.parquet`, `pdfs/`, optionally
 `preprocessed.parquet`, and `images/`. Uploaded Parquet copies store relative PDF
 paths. Download converts these to absolute paths in the local copies so existing
 preprocessing, caching, and training commands can use them directly.
+
+## Load inputs from ClearML datasets
+
+Existing input options accept a local path or an explicit dataset reference:
+
+```sh
+uv run --env-file .env python -m commands.cli preprocess bert \
+  --source-path "clearml://$RAW_ID/raw.parquet" \
+  --output-path ./data/interim/docile.parquet
+
+uv run --env-file .env python -m commands.cli train bert \
+  --dataset-path "clearml://$BERT_ID/preprocessed.parquet"
+
+uv run --env-file .env python -m commands.cli pipeline layoutlm \
+  --dataset-path "clearml://$LAYOUTLM_ID/preprocessed.parquet" \
+  --images-path "clearml://$IMAGES_ID/images"
+```
+
+The Parquet and image IDs can refer to sibling datasets. Both must use matching
+documents and dataset versions. `preprocess layoutlm`, `train layoutlm`,
+`pipeline bert`, and the BERT debug dataset input support the same source format.
+`datasets cache-images docile --dataset-path` accepts raw or processed references;
+its `--images-path` is still a local output directory.
+
+The source loader resolves finalized datasets through the ClearML SDK cache.
+It updates PDF paths in memory and leaves cached files unchanged. Preprocessing
+still receives a DataFrame and writes a local export. See
+[direct ClearML loading](clearml_datasets.md#load-directly-from-clearml) for
+configuration, cache behavior, and worker requirements.
 
 ## Train BERT with plain PyTorch
 

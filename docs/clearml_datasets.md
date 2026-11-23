@@ -2,8 +2,9 @@
 
 [Back to OCR](../README.md) · [CLI reference](cli.md)
 
-Preprocessing uses local Parquet files. It does not need ClearML credentials,
-a dataset ID, or a download. ClearML storage is a separate, optional step.
+Preprocessing accepts local Parquet files or explicit ClearML input references.
+Local inputs do not need ClearML credentials. Remote inputs are resolved by the
+source loader before the same preprocessing steps run. Storage is optional.
 Upload commands store files that already exist. They do not load DocILE source
 JSON or run preprocessing.
 
@@ -51,6 +52,116 @@ uv run python -m commands.cli datasets cache-images docile \
 Download DocILE archives first if they are not present. `preprocess layoutlm`
 can replace `preprocess bert`; both write the same shared invoice schema.
 These operations do not upload data. You can train directly from their outputs.
+
+## Load directly from ClearML
+
+Use `clearml://<dataset-id>/<member>` in existing input path options. Use the
+exact finalized dataset ID. The member is `raw.parquet`, `preprocessed.parquet`,
+or `images`, matching the upload layout. ClearML credentials must be available
+on the machine running the command.
+
+### Raw Parquet for preprocessing
+
+```sh
+uv run --env-file .env python -m commands.cli preprocess bert \
+  --source-path "clearml://$RAW_ID/raw.parquet" \
+  --output-path ./data/interim/docile.parquet
+```
+
+Use `preprocess layoutlm` for the same shared invoice export. The source loader
+retrieves raw Parquet and PDFs through the ClearML SDK cache and resolves PDF
+references in memory. The preprocessing steps still operate on a DataFrame;
+they do not upload files or look up dataset IDs themselves. Output remains a
+local Parquet or CSV file.
+
+### Preprocessed Parquet for training
+
+```sh
+uv run --env-file .env python -m commands.cli train bert \
+  --dataset-path "clearml://$BERT_ID/preprocessed.parquet"
+
+uv run --env-file .env python -m commands.cli train layoutlm \
+  --dataset-path "clearml://$LAYOUTLM_ID/preprocessed.parquet" \
+  --images-path "clearml://$IMAGES_ID/images"
+```
+
+The image and preprocessed datasets can be siblings under the raw dataset.
+Use matching dataset versions and the same document split. A combined child
+that inherits both members can use the same ID for both options.
+
+`pipeline bert`, `pipeline layoutlm`, and the BERT debug dataset input also
+accept these references. Controllers retain the URI. Each worker resolves it
+on its own machine. Preparation and training output directories must still be
+shared when ClearML stages run on different workers.
+
+For configuration through `.env`, existing input settings accept references:
+
+```dotenv
+BERTPYTORCH_DATASET_PATH=clearml://<bert-dataset-id>/preprocessed.parquet
+LAYOUTLM_DATASET_PATH=clearml://<layoutlm-dataset-id>/preprocessed.parquet
+LAYOUTLM_IMAGES_PATH=clearml://<image-dataset-id>/images
+```
+
+Keep `DOCILE_OUTPUT_PATH` as a local destination for `datasets load docile`.
+Pass a raw reference with `preprocess --source-path` instead.
+
+### Render a new cache from stored PDFs
+
+```sh
+uv run --env-file .env python -m commands.cli datasets cache-images docile \
+  --dataset-path "clearml://$RAW_ID/raw.parquet" \
+  --images-path ./data/interim/docile_images
+```
+
+`--images-path` is a local output directory for this command. For training,
+the same option can select the existing ClearML image cache as shown above.
+
+### Python and notebooks
+
+Use the same resolver when working directly with a DataFrame:
+
+```python
+from app.datasets.source import DatasetSource
+
+source = DatasetSource(
+    "clearml://<processed-dataset-id>/preprocessed.parquet"
+).resolve("preprocessed.parquet")
+documents = source.read_parquet()
+
+images = DatasetSource(
+    "clearml://<image-dataset-id>/images"
+).resolve("images").path
+page_path = images / "dpi_150" / document_id / "page_0000.png"
+```
+
+Replace the IDs and set `document_id` to a document in your dataset. Load the
+same ClearML credentials used by the CLI. Use `resolve("raw.parquet")` with a raw
+dataset reference when original OCR and annotations are required.
+These references are handled by `DatasetSource`, not by pandas directly.
+
+### Cache and file paths
+
+The resolver asks ClearML for the selected member and its required files:
+
+- Parquet inputs: the selected Parquet and inherited PDFs.
+- Image inputs: PNG files under `images/dpi_150/`.
+
+ClearML downloads archive chunks, so a chunk can contain additional files even
+when only selected members are requested. The SDK reuses its local cache.
+
+Cached Parquet files remain unchanged. Stored relative PDF paths become local
+absolute paths only in the loaded DataFrame. Cached images are read-only inputs;
+newly rendered fallback pages go to `<LAYOUTLM_OUTPUT_DIR>/images` rather than
+into the ClearML cache. Local image paths retain their existing behavior.
+A missing or unreadable cached image is not repaired remotely. A missing page
+can be rendered from the downloaded PDF into the local fallback cache.
+
+An omitted member uses the context default: raw Parquet for preprocessing and
+image rendering, preprocessed Parquet for training, and `images` for a training
+image source. Explicit member names are clearer in scripts.
+
+Local paths continue to work. The explicit `datasets download clearml` command
+also remains available when you want a writable bundle in a chosen directory.
 
 ## Upload existing files
 
@@ -157,7 +268,8 @@ docile-bundle/
 Upload converts PDF paths only in a temporary copy. Download converts them to
 absolute paths only in the local destination copy. The remote dataset stays
 unchanged. The Parquet file and all other values remain available through the
-same local interfaces. No ClearML links enter preprocessing or training.
+same local interfaces. Direct URI loading instead resolves paths in memory and
+leaves the cached Parquet unchanged. No ClearML links enter preprocessing or training.
 
 If you move an already downloaded directory, download it again at the new
 location so PDF references point to the new paths.

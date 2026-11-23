@@ -166,7 +166,9 @@ preprocessing version can be compared against the same inputs.
 
 ClearML storage is separate from preprocessing. Upload commands store existing
 raw Parquet, processed Parquet, PDFs, and image caches as related datasets.
-Preprocessing continues to read and write local files and does not need ClearML.
+Preprocessing accepts local files or an explicit ClearML source reference.
+The source loader resolves remote data before running the same DataFrame steps;
+outputs remain local files. Local inputs do not need ClearML credentials.
 Upload converts PDF paths in temporary copies. Download sets local absolute PDF
 paths so the existing preprocessing and training commands can use either Parquet
 file directly. See [ClearML datasets](clearml_datasets.md).
