@@ -132,8 +132,12 @@ flowchart TD
 ```
 
 The steps are in [LayoutLM preprocessing](../app/extraction/layoutlm/preprocess.py).
-An ambiguous word still rejects the document. An unmatched annotation still
-rejects the document. The coverage threshold remains configurable.
+Candidate annotations must meet the configured word-coverage threshold. Words
+select the highest coverage rounded to one decimal, then the smallest annotation
+area, then the lowest annotation ID. An annotation with no assigned words still
+rejects the document. The report marks it as superseded when more than 80% of a
+selected annotation box lies inside it on the same page; this reason does not
+make the document accepted.
 
 [LayoutLMPreprocess](../app/pipelines/layoutlm/preprocess.py) processes each
 partition, writes rejection reports, and saves the CSV acceptance manifest.
