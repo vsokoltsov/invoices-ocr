@@ -47,6 +47,9 @@ examples of how to interpret model results.
 See [preprocessing](docs/preprocessing.md) for the shared and model-specific
 PipeFunc steps and the download-to-training workflow.
 
+See [XY-cut reading order](docs/xy_cut.md) for the algorithm, illustrated examples,
+optional table protection, and pipeline integration.
+
 ## Development
 
 Run the local checks:

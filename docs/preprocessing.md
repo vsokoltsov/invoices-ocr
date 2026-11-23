@@ -43,7 +43,8 @@ flowchart TD
     C --> D[Flatten OCR words and select geometry]
     D --> F[Convert annotations to the invoice schema]
     F --> E[Order visual rows and rebuild text offsets]
-    E --> H[Save separate processed Parquet or CSV]
+    E --> X[XY-cut block order and rebuilt text offsets]
+    X --> H[Save separate processed Parquet or CSV]
 ```
 
 Both commands export the same model-independent invoice schema. The default
@@ -68,8 +69,11 @@ needed when rendering page images. Raw data and processed data have separate
 paths: `DOCILE_OUTPUT_PATH` selects raw data; model dataset settings select the
 processed export.
 
-The current reading-order and annotation rules are retained. This pipeline does
-not enable XY-cut or Smallest Area Wins.
+The shared pipeline runs `OrderOCRWords()` followed by `XYCut()`. XY-cut uses
+full-page ordering by default; no table protection is configured in the CLI.
+See [XY-cut reading order](xy_cut.md) for the exact rules, diagrams, optional
+table ranges, and limitations. LayoutLM annotation assignment uses the coverage
+and area ranking described below.
 
 ## Component locations
 
@@ -77,7 +81,8 @@ not enable XY-cut or Smallest Area Wins.
 | --- | --- |
 | `app/datasets/docile/` | Source download, original file loading, and DocILE format adaptation. |
 | `app/extraction/preprocess.py` | Shared invoice preprocessing orchestration and export. |
-| `app/extraction/order.py` | Shared OCR reading order and character-offset reconstruction. |
+| `app/extraction/order.py` | Initial horizontal reading order and character offsets. |
+| `app/extraction/xy_cut.py` | Shared block reading order, optional table-band protection, and rebuilt offsets. |
 | `app/extraction/bert/preprocess.py` | BERT annotation projection and character spans. |
 | `app/extraction/layoutlm/preprocess.py` | LayoutLM word assignment and page labels. |
 | `app/pipelines/preprocess.py` | Shared DataFrame execution and partition reporting. |
