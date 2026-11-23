@@ -1,5 +1,5 @@
 import json
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from pathlib import Path
 from unittest.mock import Mock
 
@@ -41,7 +41,9 @@ def pipeline_params(tmp_path):
     )
 
 
-@pytest.mark.parametrize("backend", ["pipefunc", "clearml"])
+@pytest.mark.parametrize(
+    "backend,diagnostics", [("pipefunc", False), ("pipefunc", True), ("clearml", True)]
+)
 def test_cli_runs_actual_pipefunc_graph_and_writes_reloadable_artifacts(
     pipeline_params,
     document_row,
@@ -51,7 +53,12 @@ def test_cli_runs_actual_pipefunc_graph_and_writes_reloadable_artifacts(
     tmp_path,
     monkeypatch,
     backend,
+    diagnostics,
 ):
+    pipeline_params = replace(
+        pipeline_params,
+        diagnostic_dir=str(tmp_path / "diagnostics") if diagnostics else "",
+    )
     frame = pd.DataFrame(
         [{**vars(document_row), "document_id": f"doc-{index}"} for index in range(10)]
     )
@@ -98,6 +105,8 @@ def test_cli_runs_actual_pipefunc_graph_and_writes_reloadable_artifacts(
     upload = Mock(side_effect=publish)
     monkeypatch.setattr(ClearMLPublisher, "run", upload)
     monkeypatch.setattr(cli, "get_settings", lambda: settings)
+    inspector_factory = Mock(wraps=pipeline_module.EntityErrorInspector)
+    monkeypatch.setattr(pipeline_module, "EntityErrorInspector", inspector_factory)
     if backend == "pipefunc":
         cli.main(["train", "layoutlm"])
     else:
@@ -126,6 +135,20 @@ def test_cli_runs_actual_pipefunc_graph_and_writes_reloadable_artifacts(
     assert config["warmup_ratio"] == 0.25
     assert config["min_word_coverage"] == 0.75
     assert config["device"] == "cpu"
+    assert config["diagnostic_dir"] == pipeline_params.diagnostic_dir
+    assert inspector_factory.call_count == (1 if diagnostics else 0)
+    if diagnostics:
+        directory = Path(pipeline_params.diagnostic_dir) / "epoch_001"
+        summary = json.loads((directory / "summary.json").read_text())
+        for key in history.columns:
+            if key.startswith("validation_"):
+                assert summary[key.removeprefix("validation_")] == pytest.approx(
+                    history[key].iloc[0]
+                )
+        assert (directory / "word_predictions.csv").is_file()
+        assert (directory / "per_entity.csv").is_file()
+    else:
+        assert not (tmp_path / "diagnostics").exists()
     assert (output / "processor" / "tokenizer.json").is_file()
     assert (output / "processor" / "preprocessor_config.json").is_file()
     manifest = pd.read_csv(output / "split_manifest.csv")

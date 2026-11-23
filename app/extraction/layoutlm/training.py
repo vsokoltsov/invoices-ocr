@@ -1,19 +1,23 @@
 from dataclasses import dataclass
 from typing import cast
 
+import pandas as pd
 from torch.optim.lr_scheduler import LRScheduler
+from torch.utils.data import DataLoader
 from transformers import PreTrainedModel
 
 from app.extraction.batches import TensorBatchAdapter
 from app.extraction.layoutlm.artifacts import LayoutLMArtifacts
 from app.extraction.layoutlm.checkpoint import LayoutLMCheckpoint
 from app.extraction.layoutlm.evaluation import LayoutLMEvaluation
+from app.extraction.layoutlm.inspector import EntityErrorInspector
 from app.extraction.layoutlm.metrics import (
     EpochMetrics,
     EpochMetricsResult,
     ValidationMetricsResult,
 )
 from app.extraction.metrics import WindowMetrics
+from app.extraction.protocols import ValidationResult
 from app.extraction.schema import InvoiceLabelSchema
 from app.extraction.training import (
     BestCheckpointWriter,
@@ -21,6 +25,33 @@ from app.extraction.training import (
     TokenClassificationTraining,
     TrainingCallback,
 )
+
+
+@dataclass
+class DiagnosticsWriter(TrainingCallback):
+    """Inspect validation windows after history and checkpoint persistence.
+
+    Attributes:
+        inspector: Investigator using the current model and label schema.
+        artifacts: Storage used to select a separate directory for each epoch.
+        loader: Validation windows; training and test windows are not inspected.
+    """
+
+    inspector: EntityErrorInspector
+    artifacts: LayoutLMArtifacts
+    loader: DataLoader
+
+    def on_epoch(self, epoch: int, validation: ValidationResult, history: pd.DataFrame):
+        """Save reports for the completed epoch.
+
+        Args:
+            epoch: One-based epoch included in output directory names.
+            validation: Completed evaluation; unused by this callback.
+            history: Saved training history; unused by this callback.
+        """
+        self.inspector.run(
+            self.loader, artifacts=self.artifacts.diagnostics(epoch), epoch=epoch
+        )
 
 
 @dataclass
@@ -37,12 +68,14 @@ class OCRInvoiceTraining(
         scheduler: Learning-rate schedule advanced after each optimizer update.
         schema: Field mapping and deterministic BIO IDs.
         artifacts: Storage used for epoch history and best.pt.
+        inspector: Optional investigator for validation error reports.
     """
 
     metrics: EpochMetrics
     scheduler: LRScheduler
     schema: InvoiceLabelSchema
     artifacts: LayoutLMArtifacts
+    inspector: EntityErrorInspector | None = None
 
     batch_adapter = TensorBatchAdapter(
         ("input_ids", "attention_mask", "bbox", "pixel_values")
@@ -97,9 +130,9 @@ class OCRInvoiceTraining(
         must contain at least one sample.
 
         Returns:
-            History writer followed by the LayoutLM checkpoint writer.
+            History and checkpoint writers, then optional validation diagnostics.
         """
-        return (
+        callbacks = (
             HistoryWriter(self.artifacts),
             BestCheckpointWriter(
                 LayoutLMCheckpoint(
@@ -111,3 +144,9 @@ class OCRInvoiceTraining(
                 ),
             ),
         )
+        if self.inspector is not None and self.artifacts.diagnostics_dir is not None:
+            return (
+                *callbacks,
+                DiagnosticsWriter(self.inspector, self.artifacts, self.val_loader),
+            )
+        return callbacks

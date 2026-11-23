@@ -218,3 +218,27 @@ def test_window_evaluation_does_not_reconstruct_page_word_ids(tmp_path):
 def test_epoch_count_must_be_positive(tmp_path):
     with pytest.raises(ValueError, match="epochs must be positive"):
         make_trainer(tmp_path, epochs=0)
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+def test_optional_inspection_runs_after_history_is_saved_for_each_epoch(
+    tmp_path, enabled
+):
+    trainer = make_trainer(tmp_path, epochs=2)
+    inspector = Mock()
+    trainer.inspector = inspector if enabled else None
+    trainer.artifacts = replace(
+        trainer.artifacts, diagnostics_dir=tmp_path / "diagnostics" if enabled else None
+    )
+
+    def inspect(loader, artifacts, *, epoch):
+        assert loader is trainer.val_loader
+        assert artifacts.output_dir == tmp_path / "diagnostics" / f"epoch_{epoch:03d}"
+        assert len(pd.read_csv(trainer.artifacts.history_path)) == epoch
+        assert trainer.artifacts.checkpoint_path.is_file()
+
+    inspector.run.side_effect = inspect
+    trainer.train()
+    assert inspector.run.call_count == (2 if enabled else 0)
+    if not enabled:
+        assert not (tmp_path / "diagnostics").exists()

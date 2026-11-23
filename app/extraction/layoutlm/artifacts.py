@@ -16,6 +16,7 @@ class LayoutLMArtifacts(RunArtifacts):
     checkpoint_path: Path = Path("best.pt")
     images_path: Path = Path("images")
     source_images_path: Path | None = None
+    diagnostics_dir: Path | None = None
 
     @classmethod
     def from_params(cls, params: LayoutLMTrainingParams) -> "LayoutLMArtifacts":
@@ -28,17 +29,56 @@ class LayoutLMArtifacts(RunArtifacts):
             if source.root is None
             else Path(params.output_dir).expanduser().resolve() / "images",
             source_images_path=source.path if source.root is not None else None,
+            diagnostics_dir=Path(params.diagnostic_dir).expanduser().resolve()
+            if params.diagnostic_dir
+            else None,
         )
 
     def __post_init__(self) -> None:
         super().__post_init__()
         for name in ("checkpoint_path", "images_path"):
             object.__setattr__(self, name, self.resolve(getattr(self, name)))
+        if self.diagnostics_dir is not None:
+            object.__setattr__(
+                self, "diagnostics_dir", self.resolve(self.diagnostics_dir)
+            )
 
     def prepare(self) -> None:
         super().prepare()
         self.checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
         self.images_path.mkdir(parents=True, exist_ok=True)
+        if self.diagnostics_dir is not None:
+            self.diagnostics_dir.mkdir(parents=True, exist_ok=True)
+
+    def diagnostics(self, epoch: int) -> "LayoutLMArtifacts":
+        """Return storage for one completed validation epoch.
+
+        Args:
+            epoch: One-based epoch used in the directory name.
+
+        Returns:
+            Storage rooted at diagnostic_dir/epoch_NNN.
+
+        Raises:
+            ValueError: Diagnostic output is disabled.
+        """
+        if self.diagnostics_dir is None:
+            raise ValueError("Diagnostic output is not configured")
+        return LayoutLMArtifacts(self.diagnostics_dir / f"epoch_{epoch:03d}")
+
+    def save_diagnostics(self, report: pd.DataFrame, errors: pd.DataFrame) -> None:
+        """Save strict entity scores and false-positive/false-negative reports.
+
+        Args:
+            report: Per-entity scores, indexed by entity name.
+            errors: Entity errors with a status column.
+        """
+        self.write_csv(self.output_dir / "per_entity.csv", report, index_label="entity")
+        self.write_csv(self.output_dir / "entity_errors.csv", errors)
+        for status in ("false_positive", "false_negative"):
+            self.write_csv(
+                self.output_dir / f"{status}.csv", errors.loc[errors.status == status]
+            )
 
     @property
     def checkpoint_location(self) -> Path:
