@@ -154,8 +154,17 @@ After the common export exists, run `datasets cache-images docile` to render
 the PDF pages. Then run the existing `train` or `pipeline` commands. Both local
 training and ClearML stages use the same preprocessing components.
 
-An empty accepted partition stops training after its rejection report is
-written. A preprocessing error does not silently remove a source document
+Model preparation prints a compact summary to stdout for each split and for
+all splits together. It shows input documents, accepted documents, rejected
+documents and their percentage, and output records (BERT records or LayoutLM
+pages). The percentage uses source documents, not pages or token windows.
+At most three rejection categories are shown. Each category counts a document
+once, even if it has repeated issues; a document can have multiple categories.
+These summaries appear during `train` and `pipeline` preparation. The standalone
+`preprocess` export does not run model-specific rejection rules.
+
+An empty accepted partition prints its summary and leading rejection reasons,
+then stops training after its rejection report is written. A preprocessing error does not silently remove a source document
 from the original dataset.
 
 Record the source dataset version, preprocessing settings, code commit, and

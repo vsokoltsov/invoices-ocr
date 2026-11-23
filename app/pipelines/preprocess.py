@@ -1,6 +1,7 @@
 import json
 from abc import ABC, abstractmethod
-from collections.abc import Callable, Sequence
+from collections import Counter, defaultdict
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from inspect import isroutine
 from typing import Any, ClassVar, NamedTuple
@@ -199,6 +200,56 @@ class PreprocessPartitions(ABC):
         """
         ...
 
+    def print_statistics(self, name: str, counts: Mapping[str, int]) -> None:
+        """Print document counts and the prepared record count for one split.
+
+        Args:
+            name: Partition name, or total for all completed partitions.
+            counts: Source, accepted, rejected, and output record counts.
+        """
+        percentage = (
+            100 * counts["rejected"] / counts["documents"]
+            if counts["documents"]
+            else 0.0
+        )
+        print(
+            f"[{type(self).__name__}] {name}: "
+            f"{counts['documents']} documents; accepted {counts['accepted']}; "
+            f"rejected {counts['rejected']} ({percentage:.1f}%); "
+            f"{self.record_name} {counts['records']}",
+            flush=True,
+        )
+
+    def print_rejection_reasons(self, failures: pd.DataFrame) -> None:
+        """Print at most three rejection categories counted once per document.
+
+        Args:
+            failures: BERT issue records or LayoutLM reason records.
+        """
+        by_document = defaultdict(set)
+        for row in failures.to_dict("records"):
+            if "issues" in row:
+                reasons = {issue.get("status", "unknown") for issue in row["issues"]}
+            else:
+                reasons = {
+                    reason.split(":", 1)[0].strip()
+                    for reason in row["reason"].split("; ")
+                }
+            by_document[row["document_id"]].update(reasons or {"unknown"})
+        counts = Counter(
+            reason for reasons in by_document.values() for reason in reasons
+        )
+        if not counts:
+            return
+        print(
+            f"[{type(self).__name__}] Top rejection reasons (documents; categories can overlap):",
+            flush=True,
+        )
+        for reason, count in sorted(
+            counts.items(), key=lambda item: (-item[1], item[0])
+        )[:3]:
+            print(f"  {reason}: {count}", flush=True)
+
     def run(self, split: DatasetsSplit) -> PreprocessResult:
         """Prepare every split without changing document membership.
 
@@ -212,12 +263,29 @@ class PreprocessPartitions(ABC):
             ValueError: A partition contains no accepted records.
         """
         records, rejected = {}, {}
+        totals = Counter()
         for name in ("train", "val", "test"):
-            accepted, failures = self.prepare_partition(getattr(split, name))
+            source = getattr(split, name)
+            accepted, failures = self.prepare_partition(source)
             records[name], rejected[name] = accepted, failures
             self.artifacts.save_rejections(name, failures)
+            counts = {
+                "documents": len(source),
+                "accepted": accepted["document_id"].nunique()
+                if not accepted.empty
+                else 0,
+                "rejected": failures["document_id"].nunique()
+                if not failures.empty
+                else 0,
+                "records": len(accepted),
+            }
+            totals.update(counts)
+            self.print_statistics(name, counts)
             if accepted.empty:
+                self.print_rejection_reasons(failures)
                 raise ValueError(f"No accepted {self.record_name} in {name}")
         result = PreprocessResult(DatasetsSplit(**records), DatasetsSplit(**rejected))
         self.save_manifest(split, result.rejected)
+        self.print_statistics("total", totals)
+        self.print_rejection_reasons(pd.concat(rejected.values(), ignore_index=True))
         return result
