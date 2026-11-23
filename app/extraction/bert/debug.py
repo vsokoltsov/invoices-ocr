@@ -6,6 +6,7 @@ import pandas as pd
 import torch
 
 from app.aggregates.bert.params import BertPytorchDebugParams
+from app.datasets.source import DatasetSource
 from app.datasets.split import DatasetsSplit
 from app.extraction.bert.artifacts import BertArtifacts
 from app.extraction.bert.checkpoint import BertCheckpointLoader, BertEvaluationRecords
@@ -44,7 +45,11 @@ class BertPytorchDebugPipeline:
             raise ValueError(
                 "No saved test split; pass --dataset-path and the original --random-seed"
             )
-        frame = pd.read_parquet(params.dataset_path)
+        frame = (
+            DatasetSource(params.dataset_path)
+            .resolve("preprocessed.parquet")
+            .read_parquet()
+        )
         preprocessor = (
             ItemPreprocessor(schema)
             if all(path.startswith("items.") for path in schema.field_to_entity)

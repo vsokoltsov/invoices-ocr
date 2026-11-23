@@ -5,6 +5,7 @@ import pandas as pd
 from PIL import Image
 
 from app.aggregates.layoutlm.params import LayoutLMTrainingParams
+from app.datasets.source import DatasetSource
 from app.extraction.artifacts import RunArtifacts
 
 
@@ -14,14 +15,19 @@ class LayoutLMArtifacts(RunArtifacts):
 
     checkpoint_path: Path = Path("best.pt")
     images_path: Path = Path("images")
+    source_images_path: Path | None = None
 
     @classmethod
     def from_params(cls, params: LayoutLMTrainingParams) -> "LayoutLMArtifacts":
         """Keep configured report, checkpoint, and image-cache paths independent."""
+        source = DatasetSource(params.images_path).resolve("images")
         return cls(
             output_dir=Path(params.output_dir),
             checkpoint_path=Path(params.checkpoint_path).expanduser().resolve(),
-            images_path=Path(params.images_path).expanduser().resolve(),
+            images_path=source.path
+            if source.root is None
+            else Path(params.output_dir).expanduser().resolve() / "images",
+            source_images_path=source.path if source.root is not None else None,
         )
 
     def __post_init__(self) -> None:
@@ -84,11 +90,20 @@ class LayoutLMArtifacts(RunArtifacts):
     def load_page_image(
         self, document_id: str, page: int, dpi: int
     ) -> Image.Image | None:
-        path = self.page_image_path(document_id, page, dpi)
-        if not path.is_file():
-            return None
-        with Image.open(path) as image:
-            return image.convert("RGB")
+        paths = [self.page_image_path(document_id, page, dpi)]
+        if self.source_images_path is not None:
+            paths.insert(
+                0,
+                self.source_images_path
+                / f"dpi_{dpi}"
+                / document_id
+                / f"page_{page:04d}.png",
+            )
+        for path in paths:
+            if path.is_file():
+                with Image.open(path) as image:
+                    return image.convert("RGB")
+        return None
 
     def save_page_image(
         self, document_id: str, page: int, dpi: int, image: Image.Image

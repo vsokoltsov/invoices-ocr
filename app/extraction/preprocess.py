@@ -9,6 +9,7 @@ from typing import Protocol
 import pandas as pd
 from pipefunc import PipeFunc, Pipeline
 
+from app.datasets.source import DatasetSource
 from app.extraction.order import OCRReadingOrder
 from app.extraction.xy_cut import XYCut
 
@@ -16,7 +17,7 @@ from app.extraction.xy_cut import XYCut
 class InvoiceSource(Protocol):
     """Define source access and normalization for invoice preprocessing."""
 
-    dataset_path: Path
+    dataset_path: str | Path
 
     def load(self) -> pd.DataFrame:
         """Return document records read from a raw Parquet snapshot."""
@@ -122,7 +123,8 @@ class InvoicePreprocess:
         if Path(self.output_path).suffix.lower() not in {".csv", ".parquet"}:
             raise ValueError("Invoice output must have a .csv or .parquet extension")
         if (
-            Path(self.source.dataset_path).expanduser().resolve()
+            not DatasetSource(self.source.dataset_path).is_clearml
+            and Path(self.source.dataset_path).expanduser().resolve()
             == Path(self.output_path).expanduser().resolve()
         ):
             raise ValueError(
