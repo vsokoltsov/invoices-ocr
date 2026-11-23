@@ -10,6 +10,7 @@ import pandas as pd
 from pipefunc import PipeFunc, Pipeline
 
 from app.extraction.order import OCRReadingOrder
+from app.extraction.xy_cut import XYCut
 
 
 class InvoiceSource(Protocol):
@@ -93,7 +94,7 @@ class InvoicePreprocess:
         Returns:
             A PipeFunc graph from raw Parquet to a processed invoice export.
         """
-        steps = (*self.source.normalization_steps(), OrderOCRWords())
+        steps = (*self.source.normalization_steps(), OrderOCRWords(), XYCut())
         functions = [
             PipeFunc(self.source.load, output_name="raw_documents"),
         ]
