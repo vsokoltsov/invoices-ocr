@@ -5,6 +5,7 @@ import pandas as pd
 import pymupdf
 from tqdm.auto import tqdm
 
+from app.datasets.source import DatasetSource
 from app.extraction.layoutlm.artifacts import LayoutLMArtifacts
 from app.extraction.layoutlm.converter import AttachmentToImageConverter
 
@@ -13,15 +14,16 @@ from app.extraction.layoutlm.converter import AttachmentToImageConverter
 class DocileImageCache:
     """Cache all PDF pages listed in a prepared DocILE CSV or Parquet file."""
 
-    dataset_path: Path
+    dataset_path: str | Path
     images_path: Path
 
     def run(self) -> Path:
-        dataset_path = self.dataset_path.expanduser().resolve()
+        source = DatasetSource(self.dataset_path).resolve("raw.parquet")
+        dataset_path = source.path
         images_path = self.images_path.expanduser().resolve()
         columns = ["document_id", "pdf_path"]
         if dataset_path.suffix.lower() == ".parquet":
-            documents = pd.read_parquet(dataset_path, columns=columns)
+            documents = source.read_parquet(columns=columns)
         elif dataset_path.suffix.lower() == ".csv":
             documents = pd.read_csv(
                 dataset_path,

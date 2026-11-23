@@ -65,6 +65,7 @@ def storage(tmp_path, monkeypatch):
     api.create.side_effect = create
     api.get.side_effect = lambda dataset_id: datasets[dataset_id]
     monkeypatch.setattr("app.datasets.clearml.Dataset", api)
+    monkeypatch.setattr("app.datasets.source.Dataset", api)
     return api, datasets
 
 
@@ -323,3 +324,171 @@ def test_processed_upload_rejects_documents_missing_from_parent(
     with pytest.raises(ValueError, match="missing document PDFs"):
         PreprocessedDocileDatasetUpload(prepared, parent_id, "ocr", "processed").run()
     assert api.create.call_count == 1
+
+
+def test_remote_raw_preprocessing_and_separate_processed_and_image_inputs(
+    raw_dataset, storage, tmp_path, monkeypatch
+):
+    from app.datasets.source import DatasetSource
+    from app.extraction.layoutlm.artifacts import LayoutLMArtifacts
+    from app.extraction.layoutlm.converter import AttachmentToImageConverter
+    from app.pipelines.bert.pipeline import BertTrainingPipeline
+    from app.pipelines.layoutlm.pipeline import LayoutLMTrainingPipeline
+    from commands.cli import bert_params, layoutlm_params
+
+    api, datasets = storage
+    raw_id = RawDocileDatasetUpload(raw_dataset, "ocr", "raw").run()
+    raw_root = Path(datasets[raw_id].get_local_copy())
+    original = (raw_root / "raw.parquet").read_bytes()
+    raw_reference = f"clearml://{raw_id}/raw.parquet"
+    settings = Settings(_env_file=None)
+    monkeypatch.setattr(cli, "get_settings", lambda: settings)
+    prepared = tmp_path / "prepared.parquet"
+    cli.main(
+        [
+            "preprocess",
+            "bert",
+            "--source-path",
+            raw_reference,
+            "--output-path",
+            str(prepared),
+        ]
+    )
+    assert (raw_root / "raw.parquet").read_bytes() == original
+    assert Path(pd.read_parquet(prepared).iloc[0].pdf_path).is_file()
+    selected = datasets[raw_id].get_local_copy.call_args.kwargs["files"]
+    assert "raw.parquet" in selected
+    assert all(path == "raw.parquet" or path.startswith("pdfs/") for path in selected)
+
+    processed_id = PreprocessedDocileDatasetUpload(
+        prepared, raw_id, "ocr", "processed"
+    ).run()
+    image_cache = tmp_path / "images"
+    cli.main(
+        [
+            "datasets",
+            "cache-images",
+            "docile",
+            "--dataset-path",
+            raw_reference,
+            "--images-path",
+            str(image_cache),
+        ]
+    )
+    images_id = DocileImagesDatasetUpload(raw_id, image_cache, "ocr", "images").run()
+    parser = cli.build_parser(settings)
+    processed_reference = f"clearml://{processed_id}/preprocessed.parquet"
+    images_reference = f"clearml://{images_id}/images"
+    args = parser.parse_args(
+        [
+            "train",
+            "layoutlm",
+            "--dataset-path",
+            processed_reference,
+            "--images-path",
+            images_reference,
+            "--output-dir",
+            str(tmp_path / "run"),
+            "--checkpoint-path",
+            str(tmp_path / "run" / "best.pt"),
+        ]
+    )
+    params = layoutlm_params(args)
+    loaded = LayoutLMTrainingPipeline(params).load_source()
+    assert len(loaded) == 12
+    assert all(Path(path).is_file() for path in loaded.pdf_path)
+    artifacts = LayoutLMArtifacts.from_params(params)
+    artifacts.prepare()
+    assert (
+        artifacts.source_images_path
+        == Path(datasets[images_id].get_local_copy()) / "images"
+    )
+    assert artifacts.images_path == tmp_path / "run" / "images"
+    monkeypatch.setattr(
+        pymupdf, "open", Mock(side_effect=AssertionError("Use cached image"))
+    )
+    with AttachmentToImageConverter(artifacts).load_page_image(
+        {
+            "document_id": loaded.iloc[0].document_id,
+            "page": 0,
+            "pdf_path": "missing.pdf",
+        }
+    ) as image:
+        assert image.size == (150, 150)
+    assert not list(artifacts.images_path.rglob("*.png"))
+    selected = datasets[images_id].get_local_copy.call_args_list[-2].kwargs["files"]
+    assert all(path.startswith("images/dpi_150/") for path in selected)
+    args = parser.parse_args(["train", "bert", "--dataset-path", processed_reference])
+    assert len(BertTrainingPipeline(bert_params(args)).load_source()) == 12
+    assert (
+        DatasetSource(f"clearml://{processed_id}")
+        .resolve("preprocessed.parquet")
+        .path.name
+        == "preprocessed.parquet"
+    )
+
+
+@pytest.mark.parametrize(
+    "reference",
+    [
+        "clearml:/bad/raw.parquet",
+        "clearml:///raw.parquet",
+        "clearml://id/../raw.parquet",
+        "clearml://id/raw.parquet?x=1",
+        "clearml://user:secret@id/raw.parquet",
+        "clearml://id/images",
+        "clearml://id/%2e%2e/raw.parquet",
+    ],
+)
+def test_invalid_remote_references_fail_before_server_access(storage, reference):
+    from app.datasets.source import DatasetSource
+
+    with pytest.raises(ValueError, match="clearml://"):
+        DatasetSource(reference).resolve("raw.parquet")
+    storage[0].get.assert_not_called()
+
+
+def test_remote_sources_require_final_datasets_and_expected_members(
+    raw_dataset, storage
+):
+    from app.datasets.source import DatasetSource
+
+    _, datasets = storage
+    dataset_id = RawDocileDatasetUpload(raw_dataset, "ocr", "raw").run()
+    with pytest.raises(FileNotFoundError, match="preprocessed.parquet"):
+        DatasetSource(f"clearml://{dataset_id}").resolve("preprocessed.parquet")
+    with pytest.raises(FileNotFoundError, match="images"):
+        DatasetSource(f"clearml://{dataset_id}/images").resolve("images")
+    datasets[dataset_id].is_final.return_value = False
+    with pytest.raises(ValueError, match="finalized"):
+        DatasetSource(f"clearml://{dataset_id}").resolve("raw.parquet")
+
+
+def test_local_source_does_not_access_clearml(storage, tmp_path):
+    from app.datasets.source import DatasetSource
+
+    local = tmp_path / "records.parquet"
+    pd.DataFrame({"value": [1]}).to_parquet(local)
+    source = DatasetSource(local).resolve("preprocessed.parquet")
+    assert source.read_parquet().value.tolist() == [1]
+    assert source.root is None
+    storage[0].get.assert_not_called()
+
+
+@pytest.mark.parametrize("failure", ["unsafe-reference", "missing-pdf"])
+def test_remote_parquet_checks_pdf_references(raw_dataset, storage, failure):
+    from app.datasets.source import DatasetSource
+
+    _, datasets = storage
+    dataset_id = RawDocileDatasetUpload(raw_dataset, "ocr", "raw").run()
+    root = Path(datasets[dataset_id].get_local_copy())
+    path = root / "raw.parquet"
+    if failure == "unsafe-reference":
+        frame = pd.read_parquet(path)
+        frame.loc[0, "pdf_path"] = "../outside.pdf"
+        frame.to_parquet(path, index=False)
+    else:
+        pdf = next((root / "pdfs").glob("*.pdf"))
+        pdf.unlink()
+    with pytest.raises((ValueError, FileNotFoundError)):
+        DatasetSource(f"clearml://{dataset_id}").resolve("raw.parquet").read_parquet()

@@ -7,6 +7,7 @@ import pandas as pd
 from app.datasets.docile.converter import DocileAnnotationConverter
 from app.datasets.docile.corrections import DocileAnnotationCorrections
 from app.datasets.docile.models import OCRWord
+from app.datasets.source import DatasetSource
 
 
 @dataclass
@@ -149,7 +150,7 @@ class DocileSource:
         corrections_path: Optional reviewed annotation correction manifest.
     """
 
-    dataset_path: Path
+    dataset_path: str | Path
     use_snapped_boxes: bool = True
     corrections_path: str | Path | None = None
 
@@ -162,10 +163,11 @@ class DocileSource:
         Raises:
             ValueError: The input is not a valid raw DocILE Parquet dataset.
         """
-        path = Path(self.dataset_path).expanduser().resolve()
+        source = DatasetSource(self.dataset_path).resolve("raw.parquet")
+        path = source.path
         if path.suffix.lower() != ".parquet":
             raise ValueError("Raw DocILE input must be a .parquet file")
-        frame = pd.read_parquet(path)
+        frame = source.read_parquet()
         required = {"document_id", "ocr_data", "json_data", "pdf_path"}
         if missing := required - set(frame.columns):
             raise ValueError(
