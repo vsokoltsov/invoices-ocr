@@ -130,6 +130,10 @@ class LayoutLMConfig(BaseSettings):
         default="./data/interim/layoutlm_experiment",
         description="Directory for history.csv and training reports.",
     )
+    DIAGNOSTIC_DIR: str = Field(
+        default="",
+        description="Directory for per-epoch validation diagnostics; empty disables inspection.",
+    )
     CHECKPOINT_PATH: str = Field(
         default="./data/interim/layoutlm_experiment/best.pt",
         description="File path for the checkpoint with the best validation entity F1.",

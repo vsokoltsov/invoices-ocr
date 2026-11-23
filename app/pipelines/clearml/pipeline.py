@@ -218,6 +218,10 @@ class LayoutLMClearMLPipeline:
             ):
                 continue
             values[key] = str(Path(values[key]).expanduser().resolve())
+        if values["diagnostic_dir"]:
+            values["diagnostic_dir"] = str(
+                Path(values["diagnostic_dir"]).expanduser().resolve()
+            )
         return ClearMLTrainingPipeline(
             "layoutlm-training",
             (ModelRun("layoutlm", "layoutlm", values),),

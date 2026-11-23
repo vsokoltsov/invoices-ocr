@@ -28,3 +28,4 @@ class LayoutLMTrainingParams:
     dataloader_num_workers: int
     random_seed: int
     device: LayoutLMDevice
+    diagnostic_dir: str = ""

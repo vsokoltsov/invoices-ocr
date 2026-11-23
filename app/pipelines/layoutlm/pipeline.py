@@ -8,6 +8,7 @@ from transformers.tokenization_utils_tokenizers import TokenizersBackend
 from app.aggregates.layoutlm.params import LayoutLMTrainingParams
 from app.extraction.layoutlm.artifacts import LayoutLMArtifacts
 from app.extraction.layoutlm.converter import AttachmentToImageConverter
+from app.extraction.layoutlm.inspector import EntityErrorInspector
 from app.extraction.layoutlm.model import LayoutLMFieldExtractor
 from app.extraction.layoutlm.preprocess import InvoicePreprocessor
 from app.extraction.layoutlm.publisher import ClearMLPublisher
@@ -137,6 +138,16 @@ class LayoutLMTrainingPipeline(ModelPipeline):
     @cached_property
     def training_step(self):
         """Configure LayoutLM optimizer, schedule, metrics, and checkpoints."""
+        inspector = (
+            EntityErrorInspector(
+                model=self.model,
+                label_schema=self.schema,
+                device=self.device,
+                converter=self.loader_step.converter,
+            )
+            if self.params.diagnostic_dir
+            else None
+        )
         return LayoutLMTraining(
             model=self.model,
             schema=self.schema,
@@ -146,6 +157,7 @@ class LayoutLMTrainingPipeline(ModelPipeline):
             weight_decay=self.params.weight_decay,
             warmup_ratio=self.params.warmup_ratio,
             artifacts=self.artifacts,
+            inspector=inspector,
         )
 
     @cached_property

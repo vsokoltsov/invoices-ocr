@@ -7,6 +7,7 @@ from transformers import get_linear_schedule_with_warmup
 
 from app.extraction.enums import IGNORE_INDEX
 from app.extraction.layoutlm.artifacts import LayoutLMArtifacts
+from app.extraction.layoutlm.inspector import EntityErrorInspector
 from app.extraction.layoutlm.metrics import EpochMetrics
 from app.extraction.layoutlm.model import LayoutLMFieldExtractor
 from app.extraction.layoutlm.training import OCRInvoiceTraining
@@ -28,6 +29,7 @@ class LayoutLMTraining:
         weight_decay: Decay applied to trainable parameters with two or more dimensions.
         warmup_ratio: Fraction of planned optimizer steps used for linear warmup.
         artifacts: Storage for history and best.pt.
+        inspector: Optional investigator for validation error reports.
     """
 
     model: LayoutLMFieldExtractor
@@ -38,6 +40,7 @@ class LayoutLMTraining:
     weight_decay: float
     warmup_ratio: float
     artifacts: LayoutLMArtifacts
+    inspector: EntityErrorInspector | None = None
 
     def train(self, dataloaders: dict[str, DataLoader]) -> TrainingResult:
         """Train LayoutLM with AdamW and linear warmup/decay.
@@ -84,5 +87,6 @@ class LayoutLMTraining:
             schema=self.schema,
             epochs=self.epochs,
             artifacts=self.artifacts,
+            inspector=self.inspector,
         )
         return TrainingRun(trainer, self.model, self.artifacts).run()

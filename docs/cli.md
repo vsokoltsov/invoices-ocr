@@ -320,6 +320,7 @@ uv run python -m commands.cli train layoutlm \
 | `--dataset-path` | Prepared DocILE data with OCR words, boxes, annotations, and PDF paths. |
 | `--model-name` | Initial Hugging Face LayoutLMv3 checkpoint. |
 | `--output-dir` | Directory for history and reports. |
+| `--diagnostic-dir` | Optional per-epoch validation diagnostics. Empty disables inspection (default). |
 | `--checkpoint-path` | Best-validation-F1 checkpoint file; independent of `--output-dir`. |
 | `--images-path` | Directory for cached PDF page images. |
 | `--num-epoch` | Positive number of training epochs. |
@@ -332,6 +333,62 @@ uv run python -m commands.cli train layoutlm \
 | `--dataloader-num-workers` | Nonnegative number of data loader worker processes. |
 | `--random-seed` | Seed for data splitting and training. |
 | `--device` | `auto`, `cpu`, `cuda`, or `mps`. |
+
+### LayoutLM validation investigator
+
+Enable the investigator with `LAYOUTLM_DIAGNOSTIC_DIR` or `--diagnostic-dir`.
+The option works with both `train layoutlm` and `pipeline layoutlm`:
+
+```sh
+uv run --env-file .env python -m commands.cli pipeline layoutlm \
+  --execution local \
+  --dataset-path ./data/interim/docile-layoutlm.parquet \
+  --output-dir ./runs/layoutlm \
+  --checkpoint-path ./runs/layoutlm/best.pt \
+  --diagnostic-dir ./runs/layoutlm/diagnostics
+```
+
+Pass `--diagnostic-dir ""` to disable inspection. It is disabled by default.
+When disabled, the pipeline does not create an inspector or run an extra pass.
+The diagnostic path is independent of `--output-dir`; a CLI option overrides
+the environment value. ClearML workers receive the absolute diagnostic path.
+
+After each completed validation epoch, the callback saves results under
+`<diagnostic-dir>/epoch_001/`, `epoch_002/`, and so on. It inspects validation
+windows only. It uses the same first-subtoken mask, raw argmax predictions,
+and strict IOB2 span rules as validation. It does not repair predicted labels.
+History and improved checkpoints are saved before inspection starts.
+Inspection adds one validation inference pass per epoch and restores the
+model's previous training mode and the CPU random state used for loader seeds.
+
+| Output | Contents |
+| --- | --- |
+| `per_entity.csv` | Strict entity precision, recall, F1, and entity support. |
+| `per_field.csv` | Field-word precision, recall, F1, and word support. B/I labels are merged. |
+| `entity_errors.csv` | False-positive and false-negative spans with field, text, box, context, and overlapping reference spans. |
+| `false_positive.csv`, `false_negative.csv` | Separate views of the entity error report. |
+| `word_predictions.csv` | Every supervised word, its gold/predicted BIO labels, prediction confidence, box, and invalid-BIO flag. |
+| `confusion.csv` | BIO label counts; rows are gold labels and columns are predicted labels. |
+| `summary.json` | Aggregate validation scores, window/word counts, invalid-BIO counts and rate, and error-type counts. |
+| `overlays/` | Up to ten failed pages with the most incorrect BIO word labels. Gold labels are on the left and predicted labels on the right. |
+
+Reports use zero-based page, word, and window indices. Entity `start` and `end`
+refer to page word indices, with `end` excluded. Boxes use the integer 0..1000
+page scale. Confidence is the softmax probability of the predicted BIO label.
+The window index follows validation loader order and spans the complete loader.
+`overlays/index.csv` maps image names to source document IDs and page numbers.
+Only words with incorrect BIO labels are drawn. Original images stay unchanged.
+No overlay directory is created when strict entity scoring finds no errors.
+
+Error types are `boundary` (overlap with the same field), `wrong_field` (overlap
+only with other fields), `missed` (a gold span with no predicted overlap), and
+`extra` (a predicted span with no gold overlap). They describe span comparisons,
+not confirmed root causes. One boundary or field mistake can produce both a
+false-positive and a false-negative row. Invalid I-tags can also produce missing
+spans under strict IOB2 rules; inspect their word rows to see the raw prediction.
+
+Reports are saved locally on the training worker after every epoch. They are
+not added to the ClearML publication artifacts by this option.
 
 ## ClearML training pipelines
 

@@ -122,6 +122,7 @@ def test_layoutlm_builds_one_branch_and_preserves_model_settings(tmp_path, monke
         dataloader_num_workers=0,
         random_seed=17,
         device=LayoutLMDevice.CPU,
+        diagnostic_dir="layoutlm-diagnostics",
     )
     controller = Mock()
     monkeypatch.setattr(
@@ -134,6 +135,7 @@ def test_layoutlm_builds_one_branch_and_preserves_model_settings(tmp_path, monke
     assert run.model == "layoutlm"
     assert run.params["random_seed"] == 17
     assert run.params["checkpoint_path"] == str(tmp_path / "best.pt")
+    assert run.params["diagnostic_dir"] == str(Path("layoutlm-diagnostics").resolve())
 
 
 @pytest.mark.parametrize("model", ["bert", "layoutlm"])
