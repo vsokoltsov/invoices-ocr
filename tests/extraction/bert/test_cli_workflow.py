@@ -58,6 +58,19 @@ def test_docile_cli_download_and_training_use_shared_dataset(
         ]
     )
     assert capsys.readouterr().out.strip() == str(raw_path)
+    if line_items_only:
+        frame = pd.read_parquet(raw_path)
+        for index in frame.index:
+            data = json.loads(frame.at[index, "json_data"])
+            item = {
+                **data["field_extractions"][0],
+                "fieldtype": "line_item_description",
+                "line_item_id": 7,
+            }
+            data["line_item_extractions"] = [item]
+            data["line_item_headers"] = []
+            frame.at[index, "json_data"] = json.dumps(data)
+        frame.to_parquet(raw_path, index=False)
     raw_bytes = raw_path.read_bytes()
     cli.main(
         [
@@ -67,22 +80,11 @@ def test_docile_cli_download_and_training_use_shared_dataset(
             str(raw_path),
             "--output-path",
             str(output),
+            *(["--line-items-only"] if line_items_only else ["--no-line-items-only"]),
         ]
     )
     assert capsys.readouterr().out.strip().splitlines()[-1] == str(output)
     assert raw_path.read_bytes() == raw_bytes
-    if line_items_only:
-        frame = pd.read_parquet(output)
-        for index in frame.index:
-            data = json.loads(frame.at[index, "json_data"])
-            data["items"] = [
-                {
-                    "line_item_id": 7,
-                    "fields": {"description": data["invoice"]["seller_name"]},
-                }
-            ]
-            frame.at[index, "json_data"] = json.dumps(data)
-        frame.to_parquet(output, index=False)
     download = Mock(side_effect=AssertionError("Training must not download archives"))
     monkeypatch.setattr(DocileDatasetDownloader, "download", download)
     monkeypatch.setattr(

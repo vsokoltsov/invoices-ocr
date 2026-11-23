@@ -65,7 +65,7 @@ class BertPytorchConfig(BaseSettings):
     )
 
     DATASET_PATH: str = Field(
-        default="./data/interim/docile.parquet",
+        default="./data/interim/docile-bert.parquet",
         description="Prepared local Parquet or clearml://<dataset-id>/preprocessed.parquet.",
     )
     RESULT_FILENAME: str = Field(
@@ -119,7 +119,7 @@ class LayoutLMConfig(BaseSettings):
     )
 
     DATASET_PATH: str = Field(
-        default="./data/interim/docile.parquet",
+        default="./data/interim/docile-layoutlm.parquet",
         description="Prepared local Parquet or clearml://<dataset-id>/preprocessed.parquet.",
     )
     MODEL_NAME: str = Field(

@@ -38,7 +38,7 @@ def docile_archive(tmp_path):
                 "field_extractions": fields,
                 "line_item_extractions": [item],
                 "line_item_headers": [item],
-                "metadata": {"language": "eng"},
+                "metadata": {"language": "eng", "page_count": 1},
             }
             words = [
                 {

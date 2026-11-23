@@ -22,7 +22,14 @@ from app.datasets.docile.enums import DocileSplit
 from app.datasets.docile.loader import DocileDatasetLoader
 from app.datasets.docile.preprocess import DocileSource
 from app.extraction.bert.debug import BertPytorchDebugPipeline
+from app.extraction.bert.item_preprocess import ItemPreprocessor
+from app.extraction.bert.preprocess import InvoicePreprocessor as BertPreprocessor
+from app.extraction.layoutlm.preprocess import (
+    InvoicePreprocessor as LayoutLMPreprocessor,
+)
+from app.extraction.prepared import ModelPreparation
 from app.extraction.preprocess import InvoicePreprocess
+from app.extraction.schema import InvoiceLabelSchema
 from app.pipelines.bert.pipeline import BertTrainingPipeline
 
 
@@ -197,6 +204,16 @@ def preprocess_model(args: argparse.Namespace, settings: Settings) -> None:
         raise ValueError(
             "Preprocessing output must be local; set --output-path to a local Parquet or CSV file"
         )
+    if args.model == "bert":
+        preprocessor = (
+            ItemPreprocessor() if args.LINE_ITEMS_ONLY else BertPreprocessor()
+        )
+    else:
+        preprocessor = LayoutLMPreprocessor(
+            fields=InvoiceLabelSchema().field_to_entity,
+            min_coverage=args.MIN_WORD_COVERAGE,
+        )
+    output = Path(args.OUTPUT_PATH).expanduser().resolve()
     path = InvoicePreprocess(
         source=DocileSource(
             dataset_path=args.source_path,
@@ -204,6 +221,9 @@ def preprocess_model(args: argparse.Namespace, settings: Settings) -> None:
             corrections_path=args.CORRECTIONS_PATH or None,
         ),
         output_path=Path(args.OUTPUT_PATH),
+        model_step=ModelPreparation(
+            args.model, preprocessor, output.with_name(f"{output.stem}_rejected.csv")
+        ),
     ).run()
     print(path)
 
@@ -362,6 +382,14 @@ def build_parser(settings: Settings) -> argparse.ArgumentParser:
             dest="OUTPUT_PATH",
             default=model_config.DATASET_PATH,
             help="Exported invoice Parquet or CSV; defaults to the model dataset path.",
+        )
+        selected = "LINE_ITEMS_ONLY" if model_name == "bert" else "MIN_WORD_COVERAGE"
+        add_config_options(
+            model_preprocess,
+            model_config,
+            exclude=tuple(
+                name for name in type(model_config).model_fields if name != selected
+            ),
         )
         model_preprocess.set_defaults(handler=preprocess_model)
 

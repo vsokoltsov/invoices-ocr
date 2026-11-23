@@ -205,7 +205,17 @@ def test_model_preprocess_uses_model_dataset_path_and_shared_source_options(
             corrections_path="reviewed.json",
         ),
         output_path=Path(config.DATASET_PATH),
+        model_step=factory.call_args.kwargs["model_step"],
     )
+    step = factory.call_args.kwargs["model_step"]
+    assert step.model == model
+    assert step.rejection_path == Path(config.DATASET_PATH).with_name(
+        f"{model}_rejected.csv"
+    )
+    if model == "bert":
+        assert isinstance(step.preprocessor, cli.BertPreprocessor)
+    else:
+        assert step.preprocessor.min_coverage == settings.LAYOUTLM.MIN_WORD_COVERAGE
     pipeline.run.assert_called_once_with()
     assert capsys.readouterr().out.strip() == config.DATASET_PATH
 
