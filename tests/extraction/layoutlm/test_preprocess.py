@@ -6,7 +6,7 @@ import pandas as pd
 import pytest
 
 from app.extraction.enums import FIELD_TO_ENTITY
-from app.extraction.layoutlm.preprocess import InvoicePreprocessor
+from app.extraction.layoutlm.preprocess import AssignWords, InvoicePreprocessor
 from app.extraction.schema import InvoiceLabelSchema
 
 
@@ -58,8 +58,8 @@ def test_explicit_label_ids_must_include_all_selected_entities():
 @pytest.mark.parametrize(
     ("failure", "reason"),
     [
-        ("missing", "without OCR matches"),
-        ("overlap", "Ambiguous word"),
+        ("missing", "annotation_without_assigned_words"),
+        ("overlap", "superseded_by_nested_annotation"),
         ("annotation_page", "Invalid annotation page"),
         ("word_page", "Invalid OCR page"),
         ("lengths", "Annotation lengths differ"),
@@ -121,3 +121,62 @@ def test_bio_restarts_after_background_and_page_boundary(document_row):
         "B-SELLER_NAME",
     ]
     assert schema.id2label[records[1]["labels"][0]] == "B-SELLER_NAME"
+
+
+def test_nested_boxes_assign_name_and_address_without_rejecting(document_row):
+    data = json.loads(document_row.json_data)
+    data["invoice"]["seller_name"]["bbox"] = [[0.1, 0.1, 0.2, 0.2]]
+    data["invoice"]["seller_address"] = {
+        "pages": [0],
+        "bbox": [[0.1, 0.1, 0.6, 0.2]],
+    }
+    document_row.json_data = json.dumps(data)
+    original = deepcopy(vars(document_row))
+    preprocessor = InvoicePreprocessor(FIELD_TO_ENTITY)
+    records, rejected = preprocessor.run(pd.DataFrame([vars(document_row)]))
+    assert rejected.empty
+    labels = [
+        preprocessor.label2id[label]
+        for label in ("B-SELLER_NAME", "B-SELLER_ADDRESS", "O")
+    ]
+    assert records[0]["labels"] == labels
+    assert vars(document_row) == original
+
+
+@pytest.mark.parametrize(
+    ("wide_coverage", "small_coverage", "expected_owner"),
+    [(1.0, 1.0, 0), (0.83, 0.81, 1), (0.89, 0.81, 0)],
+)
+def test_assignment_ranks_coverage_then_area_then_annotation_id(
+    wide_coverage, small_coverage, expected_owner
+):
+    row = pd.Series(
+        {
+            "json_data": {"metadata": {"page_count": 1}},
+            "text_with_boxes": [
+                {"text": "word", "start": 0, "page": 0, "bbox": [0, 0.1, 1, 0.2]},
+            ],
+            "annotations": [
+                {"page": 0, "box": [0, 0.1, wide_coverage, 0.2]},
+                {"page": 0, "box": [0, 0.1, small_coverage, 0.2]},
+            ],
+        }
+    )
+    pages, matched = AssignWords(0.5).process(row)
+    assert pages[0][0]["owner"] == expected_owner
+    assert matched == {expected_owner}
+
+
+def test_unassigned_nested_annotation_is_reported_as_rejected(document_row):
+    data = json.loads(document_row.json_data)
+    data["invoice"]["seller_address"] = {
+        "pages": [0],
+        "bbox": [[0, 0, 0.7, 0.3]],
+    }
+    document_row.json_data = json.dumps(data)
+    records, rejected = InvoicePreprocessor(FIELD_TO_ENTITY).run(
+        pd.DataFrame([vars(document_row)])
+    )
+    assert records == []
+    assert rejected.document_id.tolist() == [document_row.document_id]
+    assert "superseded_by_nested_annotation: SELLER_ADDRESS" in rejected.iloc[0].reason

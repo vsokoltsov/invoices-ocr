@@ -34,6 +34,18 @@ class BoxGeometry:
         return box
 
     @staticmethod
+    def box_area(box):
+        """Calculate the area of a validated normalized box.
+
+        Args:
+            box: Valid coordinates in x0, y0, x1, y1 order.
+
+        Returns:
+            Box width multiplied by box height.
+        """
+        return float((box[2] - box[0]) * (box[3] - box[1]))
+
+    @staticmethod
     def word_coverage(word_box, annotation_box):
         """Calculate the fraction of a word box covered by an annotation.
 
@@ -101,7 +113,7 @@ class CollectAnnotations(DocumentStep):
 
 @dataclass
 class AssignWords(DocumentStep):
-    """Assign one selected annotation to each OCR word by box coverage.
+    """Assign words by rounded coverage, then prefer smaller annotation boxes.
 
     Attributes:
         min_coverage: Minimum fraction of a word covered by an annotation.
@@ -111,7 +123,7 @@ class AssignWords(DocumentStep):
     output_column = "assignment"
 
     def process(self, row: pd.Series) -> tuple[dict, set]:
-        """Match words to single annotations and reject ambiguous owners.
+        """Select one annotation for each word with sufficient box coverage.
 
         Args:
             row: Document with selected annotations and OCR words.
@@ -120,7 +132,7 @@ class AssignWords(DocumentStep):
             Words grouped by page and IDs of annotations matched by OCR.
 
         Raises:
-            ValueError: A word has invalid coordinates or multiple owners.
+            ValueError: A word has invalid coordinates or an invalid page.
         """
         words_by_page = defaultdict(list)
         matched = set()
@@ -132,18 +144,34 @@ class AssignWords(DocumentStep):
             if not 0 <= page < page_count:
                 raise ValueError(f"Invalid OCR page: {page}")
             box = BoxGeometry.validate_box(word["bbox"])
-            candidates = [
-                index
-                for index, annotation in enumerate(row.annotations)
-                if annotation["page"] == page
-                and BoxGeometry.word_coverage(box, annotation["box"])
-                >= self.min_coverage
-            ]
-            if len(candidates) > 1:
-                raise ValueError(f"Ambiguous word: {word['text']!r}, page={page}")
-            owner = candidates[0] if candidates else None
-            if owner is not None:
+            matches = []
+            for annotation_id, annotation in enumerate(row["annotations"]):
+                if annotation["page"] != page:
+                    continue
+
+                coverage = BoxGeometry.word_coverage(box, annotation["box"])
+                if coverage >= self.min_coverage:
+                    matches.append(
+                        {
+                            "annotation_id": annotation_id,
+                            "coverage": coverage,
+                            "area": BoxGeometry.box_area(annotation["box"]),
+                        }
+                    )
+
+            owner: int | None = None
+            if matches:
+                best = min(
+                    matches,
+                    key=lambda match: (
+                        -round(match["coverage"], 1),
+                        match["area"],
+                        match["annotation_id"],
+                    ),
+                )
+                owner = best["annotation_id"]
                 matched.add(owner)
+
             words_by_page[page].append(
                 {
                     "text": word["text"],
@@ -160,7 +188,10 @@ class ValidateMatches(DocumentStep):
     output_column = "matched_pages"
 
     def process(self, row: pd.Series) -> dict:
-        """Validate word assignment before creating page labels.
+        """Reject annotations that received no words after owner selection.
+
+        An unmatched box that contains a selected box is reported as superseded.
+        It still rejects the document.
 
         Args:
             row: Document with selected annotations and word assignments.
@@ -172,15 +203,44 @@ class ValidateMatches(DocumentStep):
             ValueError: An annotation has no OCR match, or no words exist.
         """
         words_by_page, matched = row.assignment
-        missing = [
-            annotation["field"]
-            for index, annotation in enumerate(row.annotations)
-            if index not in matched
-        ]
-        if missing:
-            raise ValueError(f"Annotations without OCR matches: {missing}")
         if not words_by_page:
             raise ValueError("Document has no OCR words")
+
+        issues = []
+        for annotation_id, annotation in enumerate(row["annotations"]):
+            if annotation_id in matched:
+                continue
+
+            is_superseded = False
+
+            for matched_id in matched:
+                selected = row["annotations"][matched_id]
+
+                if selected["page"] != annotation["page"]:
+                    continue
+
+                # Measure how much of the selected box lies in this box.
+                containment = BoxGeometry.word_coverage(
+                    selected["box"],
+                    annotation["box"],
+                )
+
+                if containment > 0.8:
+                    is_superseded = True
+                    break
+
+            reason = (
+                "superseded_by_nested_annotation"
+                if is_superseded
+                else "annotation_without_assigned_words"
+            )
+            issues.append(
+                f"{reason}: {annotation['field']} (annotation_id={annotation_id})"
+            )
+
+        if issues:
+            raise ValueError("; ".join(issues))
+
         return words_by_page
 
 
