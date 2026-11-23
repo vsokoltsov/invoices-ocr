@@ -49,9 +49,11 @@ uv run python -m commands.cli datasets cache-images docile \
   --images-path ./data/interim/docile_images
 ```
 
-Download DocILE archives first if they are not present. `preprocess layoutlm`
-can replace `preprocess bert`; both write the same shared invoice schema.
-These operations do not upload data. You can train directly from their outputs.
+Download DocILE archives first if they are not present. Run `preprocess layoutlm`
+with a separate output path for LayoutLM. Each export stores accepted documents
+and model-specific prepared records. These operations do not upload data.
+You can train directly from their outputs. The local rejection CSV remains
+beside each export; the existing upload command uploads the Parquet, not this CSV.
 
 ## Load directly from ClearML
 
@@ -68,7 +70,7 @@ uv run --env-file .env python -m commands.cli preprocess bert \
   --output-path ./data/interim/docile.parquet
 ```
 
-Use `preprocess layoutlm` for the same shared invoice export. The source loader
+Use `preprocess layoutlm` with a separate output for LayoutLM records. The source loader
 retrieves raw Parquet and PDFs through the ClearML SDK cache and resolves PDF
 references in memory. The preprocessing steps still operate on a DataFrame;
 they do not upload files or look up dataset IDs themselves. Output remains a

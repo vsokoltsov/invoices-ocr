@@ -20,7 +20,7 @@ It does not select OCR geometry, reorder words, or convert field names.
 
 ## Shared DocILE preprocessing
 
-Run the shared source pipeline with `preprocess bert` or `preprocess layoutlm`:
+Run the full preprocessing pipeline with `preprocess bert` or `preprocess layoutlm`:
 
 ```sh
 uv run --env-file .env python -m commands.cli datasets download docile \
@@ -32,7 +32,7 @@ uv run --env-file .env python -m commands.cli datasets load docile \
 
 uv run --env-file .env python -m commands.cli preprocess bert \
   --source-path ./data/raw/docile.parquet \
-  --output-path ./data/interim/docile.parquet
+  --output-path ./data/interim/docile-bert.parquet
 ```
 
 ```mermaid
@@ -44,30 +44,46 @@ flowchart TD
     D --> F[Convert annotations to the invoice schema]
     F --> E[Order visual rows and rebuild text offsets]
     E --> X[XY-cut block order and rebuilt text offsets]
-    X --> H[Save separate processed Parquet or CSV]
+    X --> M[Run BERT or LayoutLM preparation and rejection checks]
+    M --> J[Save rejected document report]
+    M --> H[Save accepted documents and prepared records]
 ```
 
-Both commands print progress to stdout for source loading, each transformation,
-and export. The output includes elapsed times, document and OCR word counts,
-and the count and percentage of documents without OCR words. Output is flushed
-so it appears immediately in terminal and `tee` logs. The last line is the
-exported file path. This common export does not run model-specific rejection
-checks; those counts are printed during training preparation as described below.
+Both commands print progress to stdout for source loading, transformations,
+model preparation, and export. They show elapsed times, input documents,
+accepted documents, rejected documents and their percentage, and output records.
+The rejection percentage uses all input documents as its denominator. At most
+three rejection categories are shown. A document counts once per category.
+Output is flushed for immediate terminal and `tee` logs. The last line is the
+exported file path.
 
-Both commands export the same model-independent invoice schema. The default
-output path comes from the selected model's dataset setting. Use `--output-path`
-to select another file. One export can be reused by both models. These commands
-do not yet create BERT spans or LayoutLM page labels; training creates those
-records in its preparation stage.
+Use separate files for BERT and LayoutLM. Their rules can accept different
+documents. The default output path comes from the selected model's dataset
+setting; use `--output-path` to select another local file. Defaults are
+`data/interim/docile-bert.parquet` and `data/interim/docile-layoutlm.parquet`.
+Update existing environment variables if they still select one shared output.
 
-The command runs [InvoicePreprocess](../app/extraction/preprocess.py). This
-shared extraction pipeline owns execution order, word ordering, and export.
-It uses [DocileSource](../app/datasets/docile/preprocess.py) to read the raw
-Parquet file and run DocILE-specific conversion steps. The adapter
-contains no global pipeline or export writer. Each transformation is a small
-callable class. The final export contains OCR
-text, ordered word dictionaries, invoice annotations, PDF paths, and available
-official split membership. It contains no model tokens or BIO targets.
+The command runs [InvoicePreprocess](../app/extraction/preprocess.py) through
+PipeFunc. [DocileSource](../app/datasets/docile/preprocess.py) reads the raw
+Parquet and converts DocILE data. Word ordering runs next. The final
+[ModelPreparation](../app/extraction/prepared.py) step calls the selected model's
+preprocessor, prints statistics, and saves `<output-stem>_rejected.csv` beside
+the export. If every document fails, it saves the report and stops with an error.
+
+Each exported row is an accepted document. It retains OCR text, word boxes,
+annotations, PDF paths, and available official split metadata. The additional
+`prepared_records` JSON column contains the preparation settings and results:
+
+| Model | Saved model records | Extra command option |
+| --- | --- | --- |
+| BERT | Text, validated character spans, and ignored regions | `--line-items-only` or `--no-line-items-only` |
+| LayoutLM | Page words, integer boxes, and word BIO label IDs | `--min-word-coverage` (default 0.5) |
+
+BERT's option defaults to `BERTPYTORCH_LINE_ITEMS_ONLY`. LayoutLM's option
+defaults to `LAYOUTLM_MIN_WORD_COVERAGE`. Use the same settings for training.
+A mismatch stops training and asks you to preprocess again. BERT body and item
+experiments also need separate exports. PDF paths stay in the document row;
+LayoutLM restores each page's PDF path from that row on the training machine.
 
 Preprocessing reads the raw Parquet snapshot. The original OCR and annotation
 JSON files are not needed for this step. The snapshot remains unchanged, and
@@ -94,14 +110,17 @@ and area ranking described below.
 | `app/extraction/xy_cut.py` | Shared block reading order, optional table-band protection, and rebuilt offsets. |
 | `app/extraction/bert/preprocess.py` | BERT annotation projection and character spans. |
 | `app/extraction/layoutlm/preprocess.py` | LayoutLM word assignment and page labels. |
+| `app/extraction/prepared.py` | Model preparation, saved records, rejection reports, and settings checks. |
 | `app/pipelines/preprocess.py` | Shared DataFrame execution and partition reporting. |
 
 ## Model-specific preprocessing
 
-Training loads the exported documents without changing their contents. It
-creates the seeded train, validation, and test partitions before preprocessing
-each partition. These are random document partitions, not the official split
-assignments stored in the export.
+The standalone command runs these steps before export. Training loads accepted
+documents and creates seeded train, validation, and test partitions. These are
+random document partitions, not the official split assignments in the export.
+Training reuses saved model records without repeating annotation matching or
+rejection checks. Older exports without `prepared_records` still run model
+preparation during training for compatibility.
 
 [DataFramePipeline](../app/pipelines/preprocess.py) composes ordered callables
 through PipeFunc. A callable must accept one argument named `frame` and return
@@ -129,7 +148,7 @@ The steps are in [BERT preprocessing](../app/extraction/bert/preprocess.py).
 The item preprocessor selects item annotations and retains item IDs. The
 matching, resolution, and rejection rules are unchanged.
 
-[BertPreprocess](../app/pipelines/bert/preprocess.py) processes each partition,
+[BertPreprocess](../app/pipelines/bert/preprocess.py) loads each partition's saved records,
 retains OCR metadata, writes rejection reports, and saves the JSON split
 manifest. Tokenization and BIO token labels are created by the later dataset
 step.
@@ -153,15 +172,16 @@ rejects the document. The report marks it as superseded when more than 80% of a
 selected annotation box lies inside it on the same page; this reason does not
 make the document accepted.
 
-[LayoutLMPreprocess](../app/pipelines/layoutlm/preprocess.py) processes each
-partition, writes rejection reports, and saves the CSV acceptance manifest.
+[LayoutLMPreprocess](../app/pipelines/layoutlm/preprocess.py) loads each
+partition's saved records, writes rejection reports, and saves the CSV acceptance manifest.
 Token windows and image tensors are created later.
 
 ## Image caching and training
 
-After the common export exists, run `datasets cache-images docile` to render
-the PDF pages. Then run the existing `train` or `pipeline` commands. Both local
-training and ClearML stages use the same preprocessing components.
+Run `datasets cache-images docile` with the raw dataset to render the PDF pages.
+This can run before or after model preprocessing. Then run the existing `train`
+or `pipeline` commands with the selected model export. Local training and
+ClearML stages use the same prepared-record loader.
 
 Model preparation prints a compact summary to stdout for each split and for
 all splits together. It shows input documents, accepted documents, rejected
@@ -169,8 +189,14 @@ documents and their percentage, and output records (BERT records or LayoutLM
 pages). The percentage uses source documents, not pages or token windows.
 At most three rejection categories are shown. Each category counts a document
 once, even if it has repeated issues; a document can have multiple categories.
-These summaries appear during `train` and `pipeline` preparation. The standalone
-`preprocess` export does not run model-specific rejection rules.
+The standalone `preprocess` command reports rejections across the complete
+input. For new exports, training summaries show accepted input documents and
+zero new rejections because preprocessing already removed rejected documents.
+Older common-only exports still report rejections during training.
+
+Filtering occurs before training splits for new exports. Models that accept
+different documents can therefore have different random split membership even
+with the same seed. Use a common document manifest when comparing experiments.
 
 An empty accepted partition prints its summary and leading rejection reasons,
 then stops training after its rejection report is written. A preprocessing error does not silently remove a source document

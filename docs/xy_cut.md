@@ -37,8 +37,8 @@ flowchart TD
     C --> D[Convert annotations to the invoice schema]
     D --> E[OrderOCRWords: initial visual-row order]
     E --> F[XYCut: block order and new text offsets]
-    F --> G[Save processed Parquet or CSV]
-    G --> H[BERT or LayoutLM preparation during training]
+    F --> G[BERT or LayoutLM preparation and rejection checks]
+    G --> H[Save accepted documents and prepared model records]
 ```
 
 See [`InvoicePreprocess.pipeline()`](../app/extraction/preprocess.py).
@@ -58,8 +58,9 @@ The current shared pipeline constructs `XYCut()` with its defaults. Thus:
 Do not place another full-page `OrderOCRWords` step after XY-cut. That would
 replace the block order with horizontal order again.
 
-During training, model preparation creates BERT spans or LayoutLM page labels
-from the saved result. XY-cut runs before those model-specific records exist.
+After XY-cut, the preprocessing command creates BERT spans or LayoutLM page
+labels. Training reuses those saved records. XY-cut therefore runs before the
+model-specific records exist.
 
 ## 3. Input and output
 
@@ -450,7 +451,7 @@ accuracy will improve.
   ordering as evidence that the input geometry is valid.
 - **Errors stop the shared export.** XYCut is a DataFrame callable, not a
   `DocumentStep`. Its errors do not become per-document `reason` values. The
-  model-specific rejection reports are generated later during training.
+  model-specific rejection report is generated after XY-cut completes.
 - **Image and annotation errors remain separate.** Reordering does not improve
   OCR text, table detections, word-to-field coverage, or annotation geometry.
 

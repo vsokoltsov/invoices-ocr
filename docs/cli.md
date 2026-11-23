@@ -72,13 +72,14 @@ The command prints the absolute raw file path and does not download data.
 
 Use `preprocess bert` or `preprocess layoutlm` with the raw Parquet file.
 PipeFunc applies optional corrections, flattens OCR words, converts annotations,
-orders words by visual row, rebuilds text offsets, and saves a separate export.
+orders words by visual row and XY-cut, rebuilds text offsets, runs the selected
+model rules, and saves accepted documents with prepared records.
 The command does not access the original JSON files or initialize a model.
 
 ```sh
 uv run --env-file .env python -m commands.cli preprocess bert \
   --source-path ./data/raw/docile.parquet \
-  --output-path ./data/interim/docile.parquet \
+  --output-path ./data/interim/docile-bert.parquet \
   --use-snapped-boxes \
   --corrections-path ""
 ```
@@ -89,22 +90,31 @@ uv run --env-file .env python -m commands.cli preprocess bert \
 | `--output-path` | Export `.parquet` or `.csv`; defaults to `BERTPYTORCH_DATASET_PATH` or `LAYOUTLM_DATASET_PATH`. |
 | `--use-snapped-boxes` / `--no-use-snapped-boxes` | Select snapped geometry when available (default), or original geometry. |
 | `--corrections-path` | Reviewed annotation correction manifest; `""` preserves original labels. |
+| `--line-items-only` / `--no-line-items-only` | BERT: select item or body annotations; defaults to `BERTPYTORCH_LINE_ITEMS_ONLY`. |
+| `--min-word-coverage` | LayoutLM: required word-area coverage; defaults to `LAYOUTLM_MIN_WORD_COVERAGE`. |
 
-For LayoutLM, replace `preprocess bert` with `preprocess layoutlm`. Both commands
-produce the same invoice schema, so one export can serve both models.
-Model-specific label construction runs later during training.
+For LayoutLM, use `preprocess layoutlm`. Use a separate output file for each
+model and for BERT items. The exports contain model-specific records and settings.
+Training reuses those records and checks that the settings match.
 
-The command prints loading progress, each transformation's start and completion,
-elapsed times, and the exported document and OCR word counts. It also reports
-the count and percentage of documents without OCR words. Messages are flushed
-to stdout for immediate terminal and `tee` log output. Model-specific rejection
-checks run later during `train` or `pipeline` preparation; the export says so
-explicitly rather than reporting a zero rejection count. The last stdout line
-is the absolute export path. It leaves the raw file unchanged
-and rejects matching input and output paths. Set model dataset paths to the
-processed export. If an existing `.env` uses the raw file for these settings,
-change `BERTPYTORCH_DATASET_PATH` and `LAYOUTLM_DATASET_PATH` to
-`./data/interim/docile.parquet`. See [preprocessing](preprocessing.md).
+```sh
+uv run --env-file .env python -m commands.cli preprocess layoutlm \
+  --source-path ./data/raw/docile.parquet \
+  --output-path ./data/interim/docile-layoutlm.parquet \
+  --min-word-coverage 0.5
+```
+
+The command prints progress, elapsed times, accepted and rejected document counts,
+the rejection percentage, and at most three rejection categories. It saves full
+rejection details beside the export as `<output-stem>_rejected.csv`. Only accepted
+documents enter the export. If every document fails, the command saves the report
+and exits with an error. Messages are flushed to stdout for terminal and `tee`
+logs. The last stdout line is the absolute export path.
+
+The raw file stays unchanged. Matching input and output paths are rejected.
+Set each model's dataset path to its corresponding export. Older common-only
+exports can still be used; training then runs model preparation itself.
+See [preprocessing](preprocessing.md).
 
 ## Cache DocILE page images
 
@@ -142,7 +152,7 @@ uv run --env-file .env python -m commands.cli datasets upload docile \
   --project ocr --name docile-trainval-raw --output-uri ""
 
 uv run --env-file .env python -m commands.cli datasets upload docile-preprocessed \
-  --dataset-path ./data/interim/docile.parquet \
+  --dataset-path ./data/interim/docile-bert.parquet \
   --parent-id "$RAW_ID" --project ocr --name docile-trainval-preprocessed
 
 uv run --env-file .env python -m commands.cli datasets upload docile-images \
@@ -183,7 +193,7 @@ Existing input options accept a local path or an explicit dataset reference:
 ```sh
 uv run --env-file .env python -m commands.cli preprocess bert \
   --source-path "clearml://$RAW_ID/raw.parquet" \
-  --output-path ./data/interim/docile.parquet
+  --output-path ./data/interim/docile-bert.parquet
 
 uv run --env-file .env python -m commands.cli train bert \
   --dataset-path "clearml://$BERT_ID/preprocessed.parquet"
@@ -229,7 +239,7 @@ Defaults use the `BERTPYTORCH_` environment prefix, except `--random-seed` uses
 
 ```sh
 uv run python -m commands.cli train bert \
-  --dataset-path ./data/interim/docile.parquet \
+  --dataset-path ./data/interim/docile-bert.parquet \
   --result-filename ./data/interim/docile-bert \
   --diagnostic-dir ./data/interim/bert_diagnostics \
   --checkpoint-dir ./data/interim/bert_pytorch_checkpoint \
@@ -258,8 +268,9 @@ uv run python -m commands.cli train bert \
 | `--random-seed` | Seed for reproducible data splits and training. |
 | `--line-items-only` / `--no-line-items-only` | Train only DocILE item descriptions, quantities, gross unit prices, and gross amounts, or train invoice fields (default). |
 
-Use `--line-items-only` to train an item model in a separate run. The default
-trains invoice fields using the shared field-to-entity mapping.
+Use `--line-items-only` with an export created by `preprocess bert
+--line-items-only` to train an item model in a separate run. Give the item export
+its own file path. The default trains invoice fields.
 
 ## Train LayoutLMv3
 
@@ -287,7 +298,7 @@ Each setting is also exposed as a CLI option:
 
 ```sh
 uv run python -m commands.cli train layoutlm \
-  --dataset-path ./data/interim/docile.parquet \
+  --dataset-path ./data/interim/docile-layoutlm.parquet \
   --model-name microsoft/layoutlmv3-base \
   --output-dir ./data/interim/layoutlm_experiment \
   --checkpoint-path ./data/interim/layoutlm_experiment/best.pt \
@@ -349,11 +360,11 @@ of the first, so both do not compete for a single GPU.
 
 ```sh
 uv run --env-file .env python -m commands.cli pipeline bert \
-  --mode both \
+  --mode model \
   --project ocr \
   --execution local \
   --queue default \
-  --dataset-path ./data/interim/docile.parquet \
+  --dataset-path ./data/interim/docile-bert.parquet \
   --result-filename ./data/interim/bert/history \
   --diagnostic-dir ./data/interim/bert/diagnostics \
   --checkpoint-dir ./data/interim/bert/checkpoints \
@@ -365,6 +376,11 @@ uv run --env-file .env python -m commands.cli pipeline bert \
   --weight-decay 0.01 \
   --random-seed 42
 ```
+
+A full model export supports its matching mode: `model` for body spans or
+`items` for item spans. Run these modes separately with their corresponding
+export files. The legacy `both` mode requires an older common-only export
+without saved model records, because it prepares two different label schemas.
 
 In `both` mode, `model/` and `items/` are added below the checkpoint and diagnostic
 directories. History files go into sibling `model/` and `items/` directories.
@@ -383,7 +399,7 @@ uv run --env-file .env python -m commands.cli pipeline layoutlm \
   --project ocr \
   --execution local \
   --queue default \
-  --dataset-path ./data/interim/docile.parquet \
+  --dataset-path ./data/interim/docile-layoutlm.parquet \
   --model-name microsoft/layoutlmv3-base \
   --output-dir ./data/interim/layoutlm_experiment \
   --checkpoint-path ./data/interim/layoutlm_experiment/best.pt \
