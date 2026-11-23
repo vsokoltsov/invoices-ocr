@@ -97,13 +97,33 @@ shared when ClearML stages run on different workers.
 For configuration through `.env`, existing input settings accept references:
 
 ```dotenv
+DOCILE_SOURCE_PATH=clearml://<raw-dataset-id>/raw.parquet
 BERTPYTORCH_DATASET_PATH=clearml://<bert-dataset-id>/preprocessed.parquet
 LAYOUTLM_DATASET_PATH=clearml://<layoutlm-dataset-id>/preprocessed.parquet
 LAYOUTLM_IMAGES_PATH=clearml://<image-dataset-id>/images
 ```
 
+`DOCILE_SOURCE_PATH` supplies the default raw input to `preprocess --source-path`
+and `datasets cache-images docile --dataset-path`. An empty value falls back
+to `DOCILE_OUTPUT_PATH`. Explicit command options override it.
+
 Keep `DOCILE_OUTPUT_PATH` as a local destination for `datasets load docile`.
-Pass a raw reference with `preprocess --source-path` instead.
+The archive-loading command still reads `DOCILE_DESTINATION_PATH`; the raw input
+setting does not change archive loading or raw upload defaults.
+
+With the remote input settings above, choose local destinations when creating
+new exports or page images:
+
+```sh
+uv run --env-file .env python -m commands.cli preprocess layoutlm \
+  --output-path ./data/interim/docile-layoutlm.parquet
+
+uv run --env-file .env python -m commands.cli datasets cache-images docile \
+  --images-path ./data/interim/docile_images
+```
+
+Output paths that start with `clearml:` are rejected. Upload the resulting local
+files with the separate upload commands.
 
 ### Render a new cache from stored PDFs
 

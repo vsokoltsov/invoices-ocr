@@ -85,7 +85,7 @@ uv run --env-file .env python -m commands.cli preprocess bert \
 
 | Option | Meaning |
 | --- | --- |
-| `--source-path` | Raw local Parquet or `clearml://<id>/raw.parquet`; defaults to `DOCILE_OUTPUT_PATH`. |
+| `--source-path` | Raw local Parquet or `clearml://<id>/raw.parquet`; defaults to `DOCILE_SOURCE_PATH`, falling back to `DOCILE_OUTPUT_PATH` when empty. |
 | `--output-path` | Export `.parquet` or `.csv`; defaults to `BERTPYTORCH_DATASET_PATH` or `LAYOUTLM_DATASET_PATH`. |
 | `--use-snapped-boxes` / `--no-use-snapped-boxes` | Select snapped geometry when available (default), or original geometry. |
 | `--corrections-path` | Reviewed annotation correction manifest; `""` preserves original labels. |
@@ -113,7 +113,7 @@ uv run python -m commands.cli datasets cache-images docile \
 
 | Option | Meaning |
 | --- | --- |
-| `--dataset-path` | Raw or processed `.parquet`, or processed `.csv`, containing `document_id` and `pdf_path`; defaults to `DOCILE_OUTPUT_PATH`. |
+| `--dataset-path` | Raw or processed `.parquet`, or processed `.csv`, containing `document_id` and `pdf_path`; defaults to `DOCILE_SOURCE_PATH`, falling back to `DOCILE_OUTPUT_PATH` when empty. |
 | `--images-path` | Cache directory; defaults to `LAYOUTLM_IMAGES_PATH`. |
 
 The command renders every page, including pages without selected field labels,
@@ -192,6 +192,17 @@ documents and dataset versions. `preprocess layoutlm`, `train layoutlm`,
 `pipeline bert`, and the BERT debug dataset input support the same source format.
 `datasets cache-images docile --dataset-path` accepts raw or processed references;
 its `--images-path` is still a local output directory.
+
+Set `DOCILE_SOURCE_PATH=clearml://<raw-dataset-id>/raw.parquet` in `.env`
+to reuse the same raw input for preprocessing and image caching. Their explicit
+`--source-path` and `--dataset-path` options override this default. Empty
+`DOCILE_SOURCE_PATH` falls back to `DOCILE_OUTPUT_PATH`. Keep the latter local:
+it is the destination used by `datasets load docile`. That command's
+`--source-path` still means the local archive directory.
+
+Preprocessing output and newly rendered image-cache output must be local paths.
+If model input settings point to ClearML, supply a local `--output-path` for
+preprocessing and a local `--images-path` for image rendering.
 
 The source loader resolves finalized datasets through the ClearML SDK cache.
 It updates PDF paths in memory and leaves cached files unchanged. Preprocessing

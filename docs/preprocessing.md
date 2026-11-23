@@ -66,8 +66,10 @@ Preprocessing reads the raw Parquet snapshot. The original OCR and annotation
 JSON files are not needed for this step. The snapshot remains unchanged, and
 the pipeline rejects identical input and output paths. Original PDFs are still
 needed when rendering page images. Raw data and processed data have separate
-paths: `DOCILE_OUTPUT_PATH` selects raw data; model dataset settings select the
-processed export.
+paths: `DOCILE_OUTPUT_PATH` is the local raw-loader output. `DOCILE_SOURCE_PATH`
+selects raw input for preprocessing and image caching; an empty value uses the
+raw-loader output. Model dataset settings select the processed input for training.
+Use a local `--output-path` when creating a new processed export.
 
 The shared pipeline runs `OrderOCRWords()` followed by `XYCut()`. XY-cut uses
 full-page ordering by default; no table protection is configured in the CLI.

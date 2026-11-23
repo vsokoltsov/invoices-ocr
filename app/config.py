@@ -28,6 +28,10 @@ class DocileInvoicesConfig(BaseSettings):
         default="./data/raw/docile.parquet",
         description="Raw DocILE Parquet output written by datasets load docile.",
     )
+    SOURCE_PATH: str = Field(
+        default="",
+        description="Raw input Parquet path or clearml://<dataset-id>/raw.parquet; empty uses DOCILE_OUTPUT_PATH.",
+    )
     SPLIT: DocileSplit = Field(
         default=DocileSplit.TRAINVAL,
         description="Source split to download or load: train, val, trainval, or test.",
@@ -45,6 +49,11 @@ class DocileInvoicesConfig(BaseSettings):
         ge=0,
         description="Minimum accepted archive size in bytes.",
     )
+
+    @property
+    def raw_source_path(self) -> str:
+        """Return the explicit raw input or the local loader output path."""
+        return self.SOURCE_PATH or self.OUTPUT_PATH
 
 
 class BertPytorchConfig(BaseSettings):

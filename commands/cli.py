@@ -193,6 +193,10 @@ def preprocess_model(args: argparse.Namespace, settings: Settings) -> None:
         args: Raw Parquet path, processed output path, and preprocessing settings.
         settings: Application settings; CLI defaults have already been resolved.
     """
+    if str(args.OUTPUT_PATH).startswith("clearml:"):
+        raise ValueError(
+            "Preprocessing output must be local; set --output-path to a local Parquet or CSV file"
+        )
     path = InvoicePreprocess(
         source=DocileSource(
             dataset_path=args.source_path,
@@ -250,6 +254,10 @@ def download_clearml_dataset(args: argparse.Namespace, settings: Settings) -> No
 def cache_docile_images(args: argparse.Namespace, settings: Settings) -> None:
     from app.datasets.docile.images import DocileImageCache
 
+    if str(args.images_path).startswith("clearml:"):
+        raise ValueError(
+            "Image cache output must be local; set --images-path to a local directory"
+        )
     path = DocileImageCache(
         dataset_path=args.dataset_path,
         images_path=Path(args.images_path),
@@ -340,13 +348,14 @@ def build_parser(settings: Settings) -> argparse.ArgumentParser:
                 "DESTINATION_PATH",
                 "MINIMUM_ARCHIVE_BYTES",
                 "OUTPUT_PATH",
+                "SOURCE_PATH",
                 "SPLIT",
             ),
         )
         model_preprocess.add_argument(
             "--source-path",
-            default=settings.DOCILE.OUTPUT_PATH,
-            help="Raw local Parquet or clearml://<dataset-id>/raw.parquet.",
+            default=settings.DOCILE.raw_source_path,
+            help="Raw local Parquet or clearml://<dataset-id>/raw.parquet; defaults to DOCILE_SOURCE_PATH or DOCILE_OUTPUT_PATH.",
         )
         model_preprocess.add_argument(
             "--output-path",
@@ -372,7 +381,13 @@ def build_parser(settings: Settings) -> argparse.ArgumentParser:
     add_config_options(
         docile,
         settings.DOCILE,
-        exclude=("TOKEN", "OUTPUT_PATH", "USE_SNAPPED_BOXES", "CORRECTIONS_PATH"),
+        exclude=(
+            "TOKEN",
+            "OUTPUT_PATH",
+            "SOURCE_PATH",
+            "USE_SNAPPED_BOXES",
+            "CORRECTIONS_PATH",
+        ),
     )
     docile.add_argument(
         "--token",
@@ -450,6 +465,7 @@ def build_parser(settings: Settings) -> argparse.ArgumentParser:
         exclude=(
             "TOKEN",
             "DESTINATION_PATH",
+            "SOURCE_PATH",
             "MINIMUM_ARCHIVE_BYTES",
             "USE_SNAPPED_BOXES",
             "CORRECTIONS_PATH",
@@ -473,8 +489,8 @@ def build_parser(settings: Settings) -> argparse.ArgumentParser:
     )
     docile_images.add_argument(
         "--dataset-path",
-        default=settings.DOCILE.OUTPUT_PATH,
-        help="Local DocILE file or clearml://<dataset-id>/raw.parquet (or preprocessed.parquet).",
+        default=settings.DOCILE.raw_source_path,
+        help="Local DocILE file or ClearML Parquet reference; defaults to DOCILE_SOURCE_PATH or DOCILE_OUTPUT_PATH.",
     )
     docile_images.add_argument(
         "--images-path",

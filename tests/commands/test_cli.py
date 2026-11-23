@@ -268,3 +268,87 @@ def test_docile_token_privacy(tmp_path, monkeypatch, capsys):
         )
     monkeypatch.delenv("DOCILE_TOKEN")
     assert Settings(_env_file=None).DOCILE.TOKEN == ""
+
+
+@pytest.mark.parametrize("model", ["bert", "layoutlm"])
+def test_raw_source_setting_is_used_by_preprocess_and_image_cache(
+    settings, monkeypatch, model
+):
+    reference = "clearml://raw-dataset-id/raw.parquet"
+    monkeypatch.setenv("DOCILE_SOURCE_PATH", reference)
+    settings.DOCILE = DocileInvoicesConfig(
+        _env_file=None, OUTPUT_PATH="local-output.parquet"
+    )
+    parser = cli.build_parser(settings)
+    assert settings.DOCILE.SOURCE_PATH == reference
+    assert parser.parse_args(["preprocess", model]).source_path == reference
+    assert (
+        parser.parse_args(["datasets", "cache-images", "docile"]).dataset_path
+        == reference
+    )
+    assert (
+        parser.parse_args(
+            ["preprocess", model, "--source-path", "override.parquet"]
+        ).source_path
+        == "override.parquet"
+    )
+    assert (
+        parser.parse_args(
+            ["datasets", "cache-images", "docile", "--dataset-path", "override.parquet"]
+        ).dataset_path
+        == "override.parquet"
+    )
+    loaded = parser.parse_args(["datasets", "load", "docile"])
+    assert loaded.source_path == settings.DOCILE.DESTINATION_PATH
+    assert loaded.OUTPUT_PATH == "local-output.parquet"
+    assert not hasattr(loaded, "SOURCE_PATH")
+    downloaded = parser.parse_args(["datasets", "download", "docile"])
+    assert not hasattr(downloaded, "SOURCE_PATH")
+
+
+def test_empty_raw_source_uses_loader_output(settings, monkeypatch):
+    monkeypatch.setenv("DOCILE_SOURCE_PATH", "")
+    settings.DOCILE = DocileInvoicesConfig(
+        _env_file=None, OUTPUT_PATH="custom-raw.parquet"
+    )
+    parser = cli.build_parser(settings)
+    assert parser.parse_args(["preprocess", "bert"]).source_path == "custom-raw.parquet"
+    assert (
+        parser.parse_args(["datasets", "cache-images", "docile"]).dataset_path
+        == "custom-raw.parquet"
+    )
+
+
+def test_preprocess_rejects_remote_output_before_loading(settings, monkeypatch):
+    factory = Mock()
+    monkeypatch.setattr(cli, "InvoicePreprocess", factory)
+    args = cli.build_parser(settings).parse_args(
+        [
+            "preprocess",
+            "bert",
+            "--output-path",
+            "clearml://id/preprocessed.parquet",
+        ]
+    )
+    with pytest.raises(ValueError, match="output must be local"):
+        args.handler(args, settings)
+    factory.assert_not_called()
+
+
+def test_image_cache_rejects_remote_output_before_loading(settings, monkeypatch):
+    from app.datasets.docile import images
+
+    factory = Mock()
+    monkeypatch.setattr(images, "DocileImageCache", factory)
+    args = cli.build_parser(settings).parse_args(
+        [
+            "datasets",
+            "cache-images",
+            "docile",
+            "--images-path",
+            "clearml://id/images",
+        ]
+    )
+    with pytest.raises(ValueError, match="output must be local"):
+        args.handler(args, settings)
+    factory.assert_not_called()
