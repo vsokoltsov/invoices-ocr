@@ -57,7 +57,7 @@ class BertPytorchConfig(BaseSettings):
 
     DATASET_PATH: str = Field(
         default="./data/interim/docile.parquet",
-        description="Prepared DocILE Parquet containing OCR words and annotations.",
+        description="Prepared local Parquet or clearml://<dataset-id>/preprocessed.parquet.",
     )
     RESULT_FILENAME: str = Field(
         default="bert_training_pipeline",
@@ -111,7 +111,7 @@ class LayoutLMConfig(BaseSettings):
 
     DATASET_PATH: str = Field(
         default="./data/interim/docile.parquet",
-        description="Prepared DocILE dataset containing OCR words, boxes, annotations, and PDF paths.",
+        description="Prepared local Parquet or clearml://<dataset-id>/preprocessed.parquet.",
     )
     MODEL_NAME: str = Field(
         default="microsoft/layoutlmv3-base",
@@ -127,7 +127,7 @@ class LayoutLMConfig(BaseSettings):
     )
     IMAGES_PATH: str = Field(
         default="./data/interim/docile_images",
-        description="Directory for cached PDF page images.",
+        description="Local page cache or clearml://<dataset-id>/images.",
     )
     NUM_EPOCH: int = Field(default=20, gt=0, description="Number of training epochs.")
     BATCH_SIZE: int = Field(

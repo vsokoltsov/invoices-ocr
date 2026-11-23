@@ -61,4 +61,4 @@ uv run ty check .
 ```
 
 See [ClearML datasets](docs/clearml_datasets.md) for versioned raw data, image caches,
-and portable PDF paths.
+portable PDF paths, and direct `clearml://<dataset-id>/...` input loading.
