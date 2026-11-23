@@ -280,7 +280,7 @@ def test_preprocessed_upload_uses_existing_parquet_without_preprocessing(
             "prepared",
         ]
     )
-    processed_id = capsys.readouterr().out.strip()
+    processed_id = capsys.readouterr().out.strip().splitlines()[-1]
     assert processed_id == "2"
     assert api.create.call_args.kwargs["parent_datasets"] == [raw_id]
     remote = Path(datasets[processed_id].get_local_copy())

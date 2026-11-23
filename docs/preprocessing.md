@@ -47,6 +47,13 @@ flowchart TD
     X --> H[Save separate processed Parquet or CSV]
 ```
 
+Both commands print progress to stdout for source loading, each transformation,
+and export. The output includes elapsed times, document and OCR word counts,
+and the count and percentage of documents without OCR words. Output is flushed
+so it appears immediately in terminal and `tee` logs. The last line is the
+exported file path. This common export does not run model-specific rejection
+checks; those counts are printed during training preparation as described below.
+
 Both commands export the same model-independent invoice schema. The default
 output path comes from the selected model's dataset setting. Use `--output-path`
 to select another file. One export can be reused by both models. These commands

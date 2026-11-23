@@ -94,7 +94,13 @@ For LayoutLM, replace `preprocess bert` with `preprocess layoutlm`. Both command
 produce the same invoice schema, so one export can serve both models.
 Model-specific label construction runs later during training.
 
-The command prints the absolute export path. It leaves the raw file unchanged
+The command prints loading progress, each transformation's start and completion,
+elapsed times, and the exported document and OCR word counts. It also reports
+the count and percentage of documents without OCR words. Messages are flushed
+to stdout for immediate terminal and `tee` log output. Model-specific rejection
+checks run later during `train` or `pipeline` preparation; the export says so
+explicitly rather than reporting a zero rejection count. The last stdout line
+is the absolute export path. It leaves the raw file unchanged
 and rejects matching input and output paths. Set model dataset paths to the
 processed export. If an existing `.env` uses the raw file for these settings,
 change `BERTPYTORCH_DATASET_PATH` and `LAYOUTLM_DATASET_PATH` to

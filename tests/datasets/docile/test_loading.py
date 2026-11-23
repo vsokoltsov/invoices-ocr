@@ -184,3 +184,38 @@ def test_raw_loader_requires_parquet_output(tmp_path):
         DocileDatasetLoader(tmp_path).save(tmp_path / "raw.csv")
     with pytest.raises(ValueError, match="parquet file"):
         DocileSource(tmp_path / "raw.csv").load()
+
+
+def test_export_reports_progress_and_counts_to_stdout(docile_archive, tmp_path, capsys):
+    raw = DocileDatasetLoader(docile_archive.parent).save(tmp_path / "raw.parquet")
+    capsys.readouterr()
+    output = InvoicePreprocess(DocileSource(raw), tmp_path / "prepared.parquet").run()
+    messages = capsys.readouterr().out
+    assert "Loading raw Parquet..." in messages
+    assert "Loaded 12 documents" in messages
+    assert "Running ExtractOCRWords..." in messages
+    assert "Running OrderOCRWords..." in messages
+    assert "Running XYCut..." in messages
+    assert messages.index("OrderOCRWords: 12 documents") < messages.index(
+        "Running XYCut..."
+    )
+    frame = pd.read_parquet(output)
+    words = sum(len(value) for value in frame.text_with_boxes)
+    assert (
+        f"Exported 12 documents; {words:,} OCR words; 0 documents without OCR words (0.0%)"
+        in messages
+    )
+    assert "Model rejection checks are not run here" in messages
+    assert "Finished in" in messages
+
+
+def test_export_reports_failed_step_without_success_message(tmp_path, capsys):
+    from app.extraction.preprocess import PreprocessProgress
+
+    step = PreprocessProgress("BrokenStep", Mock(side_effect=ValueError("bad input")))
+    with pytest.raises(ValueError, match="bad input"):
+        step(pd.DataFrame({"document_id": ["doc"]}))
+    messages = capsys.readouterr().out
+    assert "Running BrokenStep..." in messages
+    assert "BrokenStep failed after" in messages
+    assert "documents in" not in messages

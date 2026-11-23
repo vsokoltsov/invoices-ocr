@@ -142,7 +142,7 @@ def test_dataset_command_uses_docile_config_defaults(settings):
     assert not hasattr(args, "OUTPUT_PATH")
     prepared = cli.build_parser(settings).parse_args(["preprocess", "bert"])
     assert prepared.OUTPUT_PATH == settings.BERT_PYTORCH.DATASET_PATH
-    assert prepared.source_path == settings.DOCILE.OUTPUT_PATH
+    assert prepared.source_path == settings.DOCILE.raw_source_path
     assert args.SPLIT is settings.DOCILE.SPLIT
     raw = cli.build_parser(settings).parse_args(["datasets", "load", "docile"])
     assert raw.source_path == settings.DOCILE.DESTINATION_PATH

@@ -4,6 +4,7 @@ import json
 from collections.abc import Callable, Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from time import perf_counter
 from typing import Protocol
 
 import pandas as pd
@@ -52,6 +53,45 @@ class OrderOCRWords:
 
 
 @dataclass
+class PreprocessProgress:
+    """Report a DataFrame step without changing its output or error handling.
+
+    Attributes:
+        name: Step name shown in the console.
+        step: Transformation that accepts and returns a DataFrame.
+    """
+
+    name: str
+    step: Callable[[pd.DataFrame], pd.DataFrame]
+
+    def __call__(self, frame: pd.DataFrame) -> pd.DataFrame:
+        """Print step progress and elapsed time, then return its output.
+
+        Args:
+            frame: Input documents for this step.
+
+        Returns:
+            The transformation's output DataFrame.
+        """
+        print(f"[preprocess] Running {self.name}...", flush=True)
+        started = perf_counter()
+        try:
+            result = self.step(frame)
+        except Exception:
+            print(
+                f"[preprocess] {self.name} failed after {perf_counter() - started:.1f}s",
+                flush=True,
+            )
+            raise
+        print(
+            f"[preprocess] {self.name}: {len(result):,} documents "
+            f"in {perf_counter() - started:.1f}s",
+            flush=True,
+        )
+        return result
+
+
+@dataclass
 class InvoicePreprocess:
     """Run source adaptation, reading order, and invoice export through PipeFunc.
 
@@ -63,6 +103,22 @@ class InvoicePreprocess:
     source: InvoiceSource
     output_path: Path
 
+    def load(self) -> pd.DataFrame:
+        """Read the raw snapshot and report the source document count.
+
+        Returns:
+            Original document records returned by the source adapter.
+        """
+        print("[preprocess] Loading raw Parquet...", flush=True)
+        started = perf_counter()
+        frame = self.source.load()
+        print(
+            f"[preprocess] Loaded {len(frame):,} documents "
+            f"in {perf_counter() - started:.1f}s",
+            flush=True,
+        )
+        return frame
+
     def save(self, frame: pd.DataFrame) -> Path:
         """Write model-independent invoice documents.
 
@@ -72,6 +128,8 @@ class InvoicePreprocess:
         Returns:
             Absolute output file path.
         """
+        print("[preprocess] Saving processed export...", flush=True)
+        started = perf_counter()
         result = frame.copy()
         output = Path(self.output_path).expanduser().resolve()
         output.parent.mkdir(parents=True, exist_ok=True)
@@ -87,6 +145,21 @@ class InvoicePreprocess:
                 lambda value: json.dumps(value, ensure_ascii=False)
             )
             result.to_csv(output, index=False)
+        word_counts = frame["text_with_boxes"].map(len)
+        empty_count = int(word_counts.eq(0).sum())
+        empty_percentage = 100 * empty_count / len(frame) if len(frame) else 0.0
+        print(
+            f"[preprocess] Exported {len(frame):,} documents; "
+            f"{int(word_counts.sum()):,} OCR words; "
+            f"{empty_count:,} documents without OCR words ({empty_percentage:.1f}%) "
+            f"in {perf_counter() - started:.1f}s",
+            flush=True,
+        )
+        print(
+            "[preprocess] Model rejection checks are not run here; "
+            "counts and reasons are reported during train/pipeline preparation.",
+            flush=True,
+        )
         return output
 
     def pipeline(self) -> Pipeline:
@@ -97,13 +170,16 @@ class InvoicePreprocess:
         """
         steps = (*self.source.normalization_steps(), OrderOCRWords(), XYCut())
         functions = [
-            PipeFunc(self.source.load, output_name="raw_documents"),
+            PipeFunc(self.load, output_name="raw_documents"),
         ]
         previous = "raw_documents"
         for index, step in enumerate(steps):
             output = f"documents_{index}"
+            progress = PreprocessProgress(type(step).__name__, step)
             functions.append(
-                PipeFunc(step.__call__, output_name=output, renames={"frame": previous})
+                PipeFunc(
+                    progress.__call__, output_name=output, renames={"frame": previous}
+                )
             )
             previous = output
         functions.append(
@@ -130,4 +206,7 @@ class InvoicePreprocess:
             raise ValueError(
                 "Raw input and preprocessed output must have different paths"
             )
-        return self.pipeline().run("output_path", kwargs={})
+        started = perf_counter()
+        output = self.pipeline().run("output_path", kwargs={})
+        print(f"[preprocess] Finished in {perf_counter() - started:.1f}s", flush=True)
+        return output

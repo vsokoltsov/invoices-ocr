@@ -69,7 +69,7 @@ def test_docile_cli_download_and_training_use_shared_dataset(
             str(output),
         ]
     )
-    assert capsys.readouterr().out.strip() == str(output)
+    assert capsys.readouterr().out.strip().splitlines()[-1] == str(output)
     assert raw_path.read_bytes() == raw_bytes
     if line_items_only:
         frame = pd.read_parquet(output)
