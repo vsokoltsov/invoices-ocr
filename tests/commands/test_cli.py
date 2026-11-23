@@ -200,7 +200,7 @@ def test_model_preprocess_uses_model_dataset_path_and_shared_source_options(
     args.handler(args, settings)
     factory.assert_called_once_with(
         source=cli.DocileSource(
-            dataset_path=tmp_path / "raw.parquet",
+            dataset_path=str(tmp_path / "raw.parquet"),
             use_snapped_boxes=False,
             corrections_path="reviewed.json",
         ),

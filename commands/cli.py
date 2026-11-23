@@ -195,7 +195,7 @@ def preprocess_model(args: argparse.Namespace, settings: Settings) -> None:
     """
     path = InvoicePreprocess(
         source=DocileSource(
-            dataset_path=Path(args.source_path),
+            dataset_path=args.source_path,
             use_snapped_boxes=args.USE_SNAPPED_BOXES,
             corrections_path=args.CORRECTIONS_PATH or None,
         ),
@@ -251,7 +251,7 @@ def cache_docile_images(args: argparse.Namespace, settings: Settings) -> None:
     from app.datasets.docile.images import DocileImageCache
 
     path = DocileImageCache(
-        dataset_path=Path(args.dataset_path),
+        dataset_path=args.dataset_path,
         images_path=Path(args.images_path),
     ).run()
     print(path)
@@ -346,7 +346,7 @@ def build_parser(settings: Settings) -> argparse.ArgumentParser:
         model_preprocess.add_argument(
             "--source-path",
             default=settings.DOCILE.OUTPUT_PATH,
-            help="Raw DocILE Parquet file written by datasets load docile.",
+            help="Raw local Parquet or clearml://<dataset-id>/raw.parquet.",
         )
         model_preprocess.add_argument(
             "--output-path",
@@ -474,7 +474,7 @@ def build_parser(settings: Settings) -> argparse.ArgumentParser:
     docile_images.add_argument(
         "--dataset-path",
         default=settings.DOCILE.OUTPUT_PATH,
-        help="Raw or preprocessed DocILE file containing document_id and pdf_path.",
+        help="Local DocILE file or clearml://<dataset-id>/raw.parquet (or preprocessed.parquet).",
     )
     docile_images.add_argument(
         "--images-path",
