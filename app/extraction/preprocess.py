@@ -1,4 +1,4 @@
-"""Run shared invoice preprocessing before model-specific label construction."""
+"""Run common invoice steps and optional model preparation through PipeFunc."""
 
 import json
 from collections.abc import Callable, Sequence
@@ -98,10 +98,12 @@ class InvoicePreprocess:
     Attributes:
         source: Adapter that reads and normalizes the source dataset.
         output_path: Destination Parquet or CSV file.
+        model_step: Optional model preparation and rejection reporting step.
     """
 
     source: InvoiceSource
     output_path: Path
+    model_step: Callable[[pd.DataFrame], pd.DataFrame] | None = None
 
     def load(self) -> pd.DataFrame:
         """Read the raw snapshot and report the source document count.
@@ -120,7 +122,7 @@ class InvoicePreprocess:
         return frame
 
     def save(self, frame: pd.DataFrame) -> Path:
-        """Write model-independent invoice documents.
+        """Write document records and any prepared model results.
 
         Args:
             frame: Normalized documents with OCR words and rebuilt text offsets.
@@ -155,11 +157,12 @@ class InvoicePreprocess:
             f"in {perf_counter() - started:.1f}s",
             flush=True,
         )
-        print(
-            "[preprocess] Model rejection checks are not run here; "
-            "counts and reasons are reported during train/pipeline preparation.",
-            flush=True,
-        )
+        if self.model_step is None:
+            print(
+                "[preprocess] Model rejection checks are not run here; "
+                "use preprocess bert/layoutlm for full model preparation.",
+                flush=True,
+            )
         return output
 
     def pipeline(self) -> Pipeline:
@@ -168,7 +171,9 @@ class InvoicePreprocess:
         Returns:
             A PipeFunc graph from raw Parquet to a processed invoice export.
         """
-        steps = (*self.source.normalization_steps(), OrderOCRWords(), XYCut())
+        steps = [*self.source.normalization_steps(), OrderOCRWords(), XYCut()]
+        if self.model_step is not None:
+            steps.append(self.model_step)
         functions = [
             PipeFunc(self.load, output_name="raw_documents"),
         ]
@@ -188,7 +193,7 @@ class InvoicePreprocess:
         return Pipeline(functions)
 
     def run(self) -> Path:
-        """Execute the shared invoice preprocessing pipeline.
+        """Execute common steps and the configured model preparation.
 
         Returns:
             Absolute path of the exported dataset.

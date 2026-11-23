@@ -165,40 +165,10 @@ class PreprocessResult(NamedTuple):
     rejected: DatasetsSplit
 
 
-class PreprocessPartitions(ABC):
-    """Prepare fixed document partitions with model-specific preprocessing.
+class PreprocessStatistics:
+    """Print document acceptance counts and the leading rejection reasons."""
 
-    Attributes:
-        artifacts: Storage for rejection reports and split membership.
-        record_name: Record unit used in empty-partition error messages.
-    """
-
-    artifacts: RunArtifacts
     record_name: ClassVar[str]
-
-    @abstractmethod
-    def prepare_partition(
-        self, frame: pd.DataFrame
-    ) -> tuple[pd.DataFrame, pd.DataFrame]:
-        """Prepare one source partition.
-
-        Args:
-            frame: Source documents belonging to one split.
-
-        Returns:
-            Accepted records and rejection report as DataFrames.
-        """
-        ...
-
-    @abstractmethod
-    def save_manifest(self, split: DatasetsSplit, rejected: DatasetsSplit) -> None:
-        """Persist model-specific document membership and rejection metadata.
-
-        Args:
-            split: Original document partitions.
-            rejected: Rejection reports produced for each partition.
-        """
-        ...
 
     def print_statistics(self, name: str, counts: Mapping[str, int]) -> None:
         """Print document counts and the prepared record count for one split.
@@ -249,6 +219,42 @@ class PreprocessPartitions(ABC):
             counts.items(), key=lambda item: (-item[1], item[0])
         )[:3]:
             print(f"  {reason}: {count}", flush=True)
+
+
+class PreprocessPartitions(PreprocessStatistics, ABC):
+    """Prepare fixed document partitions with model-specific preprocessing.
+
+    Attributes:
+        artifacts: Storage for rejection reports and split membership.
+        record_name: Record unit used in empty-partition error messages.
+    """
+
+    artifacts: RunArtifacts
+    record_name: ClassVar[str]
+
+    @abstractmethod
+    def prepare_partition(
+        self, frame: pd.DataFrame
+    ) -> tuple[pd.DataFrame, pd.DataFrame]:
+        """Prepare one source partition.
+
+        Args:
+            frame: Source documents belonging to one split.
+
+        Returns:
+            Accepted records and rejection report as DataFrames.
+        """
+        ...
+
+    @abstractmethod
+    def save_manifest(self, split: DatasetsSplit, rejected: DatasetsSplit) -> None:
+        """Persist model-specific document membership and rejection metadata.
+
+        Args:
+            split: Original document partitions.
+            rejected: Rejection reports produced for each partition.
+        """
+        ...
 
     def run(self, split: DatasetsSplit) -> PreprocessResult:
         """Prepare every split without changing document membership.

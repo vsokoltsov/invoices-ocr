@@ -5,6 +5,7 @@ import pandas as pd
 from app.datasets.split import DatasetsSplit
 from app.extraction.layoutlm.artifacts import LayoutLMArtifacts
 from app.extraction.layoutlm.preprocess import InvoicePreprocessor
+from app.extraction.prepared import ModelPreparation
 from app.pipelines.preprocess import PreprocessPartitions
 
 
@@ -32,7 +33,11 @@ class LayoutLMPreprocess(PreprocessPartitions):
         Returns:
             Prepared page records and the preprocessor's rejection DataFrame.
         """
-        pages, rejected = self.preprocessor.run(frame)
+        preparation = ModelPreparation("layoutlm", self.preprocessor)
+        pages = preparation.load(frame)
+        rejected = preparation.rejection_frame([])
+        if pages is None:
+            pages, rejected = self.preprocessor.run(frame)
         return pd.DataFrame(pages), rejected
 
     def save_manifest(self, split: DatasetsSplit, rejected: DatasetsSplit) -> None:

@@ -5,6 +5,7 @@ import pandas as pd
 from app.datasets.split import DatasetsSplit
 from app.extraction.bert.artifacts import BertArtifacts
 from app.extraction.bert.preprocess import InvoicePreprocessor
+from app.extraction.prepared import ModelPreparation
 from app.pipelines.preprocess import PreprocessPartitions
 
 
@@ -32,7 +33,10 @@ class BertPreprocess(PreprocessPartitions):
         Returns:
             Prepared span records and a structured rejection report.
         """
-        accepted, failures = self.preprocessor.run(frame)
+        accepted = ModelPreparation("bert", self.preprocessor).load(frame)
+        failures = []
+        if accepted is None:
+            accepted, failures = self.preprocessor.run(frame)
         rejected = pd.DataFrame(
             failures, columns=pd.Index(["row_index", "document_id", "issues"])
         )
