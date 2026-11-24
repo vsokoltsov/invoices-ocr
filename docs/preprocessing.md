@@ -43,7 +43,9 @@ flowchart TD
     C --> D[Flatten OCR words and select geometry]
     D --> F[Convert annotations to the invoice schema]
     F --> E[Order visual rows and rebuild text offsets]
-    E --> X[XY-cut block order and rebuilt text offsets]
+    E --> Q{Use XY-cut?}
+    Q -->|Yes: body or LayoutLM by default| X[XY-cut block order and rebuilt text offsets]
+    Q -->|No: BERT items by default| M
     X --> M[Run BERT or LayoutLM preparation and rejection checks]
     M --> J[Save rejected document report]
     M --> H[Save accepted documents and prepared records]
@@ -94,8 +96,15 @@ selects raw input for preprocessing and image caching; an empty value uses the
 raw-loader output. Model dataset settings select the processed input for training.
 Use a local `--output-path` when creating a new processed export.
 
-The shared pipeline runs `OrderOCRWords()` followed by `XYCut()`. XY-cut uses
-full-page ordering by default; no table protection is configured in the CLI.
+The shared pipeline always runs `OrderOCRWords()`. BERT invoice-body and LayoutLM
+commands then run `XYCut()` before model label preparation. BERT line items
+keep horizontal row order by default. Use `--xy-cut` or `--no-xy-cut` to override
+the selected mode's default for an experiment. In Python, set
+`InvoicePreprocess(..., use_xy_cut=False)` to keep horizontal row order.
+When enabled, XY-cut uses full-page ordering; no table protection is configured
+in the CLI. No ordering is applied after character spans or page labels exist.
+Regenerate a processed export when changing its reading order. Training reuses
+the saved records and does not reorder them.
 See [XY-cut reading order](xy_cut.md) for the exact rules, diagrams, optional
 table ranges, and limitations. LayoutLM annotation assignment uses the coverage
 and area ranking described below.

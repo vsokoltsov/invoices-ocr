@@ -96,3 +96,106 @@ def test_all_rejected_writes_report_and_stops_before_export(tmp_path, capsys):
         step(frame)
     assert pd.read_csv(path).document_id.tolist() == ["bad"]
     assert "rejected 1 (100.0%)" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(
+    "model,options,expected_text,uses_xy_cut",
+    [
+        ("bert", ["--no-line-items-only"], "Alpha Beta 10 20", True),
+        ("bert", ["--line-items-only"], "Alpha 10 Beta 20", False),
+        ("bert", ["--no-line-items-only", "--no-xy-cut"], "Alpha 10 Beta 20", False),
+        ("layoutlm", [], "Alpha Beta 10 20", True),
+    ],
+)
+def test_preprocess_selects_reading_order_before_creating_model_records(
+    tmp_path, monkeypatch, capsys, model, options, expected_text, uses_xy_cut
+):
+    words = [
+        {"value": text, "geometry": [[x, y], [x + 0.1, y + 0.02]]}
+        for text, x, y in (
+            ("Alpha", 0.1, 0.1),
+            ("10", 0.7, 0.1),
+            ("Beta", 0.1, 0.15),
+            ("20", 0.7, 0.15),
+        )
+    ]
+    annotations = {
+        "metadata": {"page_count": 1},
+        "field_extractions": [
+            {
+                "fieldtype": "vendor_name",
+                "page": 0,
+                "bbox": [0.09, 0.09, 0.21, 0.18],
+                "text": "Alpha Beta",
+            }
+        ],
+        "line_item_extractions": [
+            {
+                "fieldtype": "line_item_description",
+                "line_item_id": index,
+                "page": 0,
+                "bbox": [0.09, y - 0.01, 0.81, y + 0.03],
+                "text": text,
+            }
+            for index, y, text in [(1, 0.1, "Alpha 10"), (2, 0.15, "Beta 20")]
+        ],
+    }
+    raw = tmp_path / "raw.parquet"
+    pd.DataFrame(
+        [
+            {
+                "document_id": "two-columns",
+                "pdf_path": "unused.pdf",
+                "ocr_data": json.dumps(
+                    {
+                        "pages": [
+                            {"page_idx": 0, "blocks": [{"lines": [{"words": words}]}]}
+                        ]
+                    }
+                ),
+                "json_data": json.dumps(annotations),
+            }
+        ]
+    ).to_parquet(raw, index=False)
+    original = raw.read_bytes()
+    monkeypatch.setattr(cli, "get_settings", lambda: Settings(_env_file=None))
+    output = tmp_path / "prepared.parquet"
+    cli.main(
+        [
+            "preprocess",
+            model,
+            "--source-path",
+            str(raw),
+            "--output-path",
+            str(output),
+            *options,
+        ]
+    )
+    messages = capsys.readouterr().out
+    assert ("Running XYCut..." in messages) == uses_xy_cut
+    row = pd.read_parquet(output).iloc[0]
+    assert row.ocr_text == expected_text
+    assert [word["text"] for word in row.text_with_boxes] == expected_text.split()
+    for word in row.text_with_boxes:
+        assert row.ocr_text[word["start"] : word["end"]] == word["text"]
+    records = json.loads(row.prepared_records)["records"]
+    if model == "bert":
+        assert records[0]["text"] == expected_text
+        for entity in records[0]["entities"]:
+            assert expected_text[entity["start"] : entity["end"]] == entity["text"]
+        if "--line-items-only" in options:
+            assert [entity["text"] for entity in records[0]["entities"]] == [
+                "Alpha 10",
+                "Beta 20",
+            ]
+            assert [entity["line_item_id"] for entity in records[0]["entities"]] == [
+                1,
+                2,
+            ]
+        elif uses_xy_cut:
+            assert [entity["text"] for entity in records[0]["entities"]] == [
+                "Alpha Beta"
+            ]
+    else:
+        assert records[0]["words"] == expected_text.split()
+    assert raw.read_bytes() == original

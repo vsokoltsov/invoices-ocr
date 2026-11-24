@@ -72,7 +72,7 @@ The command prints the absolute raw file path and does not download data.
 
 Use `preprocess bert` or `preprocess layoutlm` with the raw Parquet file.
 PipeFunc applies optional corrections, flattens OCR words, converts annotations,
-orders words by visual row and XY-cut, rebuilds text offsets, runs the selected
+orders words by visual row and optional XY-cut, rebuilds text offsets, runs the selected
 model rules, and saves accepted documents with prepared records.
 The command does not access the original JSON files or initialize a model.
 
@@ -92,6 +92,13 @@ uv run --env-file .env python -m commands.cli preprocess bert \
 | `--corrections-path` | Reviewed annotation correction manifest; `""` preserves original labels. |
 | `--line-items-only` / `--no-line-items-only` | BERT: select item or body annotations; defaults to `BERTPYTORCH_LINE_ITEMS_ONLY`. |
 | `--min-word-coverage` | LayoutLM: required word-area coverage; defaults to `LAYOUTLM_MIN_WORD_COVERAGE`. |
+| `--xy-cut` / `--no-xy-cut` | Enable or disable block reading order. Default: enabled for BERT invoice body and LayoutLM; disabled for BERT line items. |
+
+BERT invoice-body preprocessing applies XY-cut before it creates character spans.
+It keeps the OCR text and word offsets aligned. BERT line-item preprocessing
+keeps horizontal row order so item descriptions and amounts stay together.
+Use `--no-xy-cut` for a body-ordering comparison. LayoutLM keeps its default
+XY-cut order. These commands do not detect or protect tables automatically.
 
 For LayoutLM, use `preprocess layoutlm`. Use a separate output file for each
 model and for BERT items. The exports contain model-specific records and settings.

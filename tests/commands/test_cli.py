@@ -206,6 +206,7 @@ def test_model_preprocess_uses_model_dataset_path_and_shared_source_options(
         ),
         output_path=Path(config.DATASET_PATH),
         model_step=factory.call_args.kwargs["model_step"],
+        use_xy_cut=True,
     )
     step = factory.call_args.kwargs["model_step"]
     assert step.model == model

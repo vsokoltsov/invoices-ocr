@@ -36,7 +36,9 @@ flowchart TD
     B --> C[Flatten OCR words and select geometry]
     C --> D[Convert annotations to the invoice schema]
     D --> E[OrderOCRWords: initial visual-row order]
-    E --> F[XYCut: block order and new text offsets]
+    E --> Q{Use XY-cut?}
+    Q -->|Yes| F[XYCut: block order and new text offsets]
+    Q -->|No| G
     F --> G[BERT or LayoutLM preparation and rejection checks]
     G --> H[Save accepted documents and prepared model records]
 ```
@@ -48,12 +50,20 @@ word dictionaries and builds the initial `ocr_text` and offsets. `XYCut` consume
 those dictionaries. Its protected table bands and skipped pages retain that
 initial order.
 
-The current shared pipeline constructs `XYCut()` with its defaults. Thus:
+When enabled, the shared pipeline constructs `XYCut()` with its defaults. Thus:
 
-- XY-cut runs for both `preprocess bert` and `preprocess layoutlm`.
-- Every page receives full-page XY-cut.
+- BERT invoice body (`preprocess bert --no-line-items-only`) uses XY-cut by default.
+- BERT line items (`preprocess bert --line-items-only`) keep horizontal row order by default.
+- LayoutLM (`preprocess layoutlm`) uses XY-cut by default.
+- `--xy-cut` and `--no-xy-cut` override the selected default for an experiment.
+- When enabled, every page receives full-page XY-cut.
 - No table protection is configured.
 - No table detector or image model is loaded by this step.
+
+The initial horizontal order keeps each item row together. Full-page XY-cut can
+instead read a description column before a quantity or amount column. This is
+why BERT line items skip the step by default. For Python callers,
+`InvoicePreprocess(..., use_xy_cut=False)` also skips it.
 
 Do not place another full-page `OrderOCRWords` step after XY-cut. That would
 replace the block order with horizontal order again.
@@ -344,8 +354,9 @@ keys back to integers before supplying the mapping to this class.
 
 ### Pipeline configuration
 
-The default shared pipeline currently calls `XYCut()` directly. There is no CLI
-flag for changing its thresholds or providing a table-range mapping. The examples
+When block ordering is enabled, the shared pipeline calls `XYCut()` directly.
+The `--xy-cut` and `--no-xy-cut` flags select whether the step runs. There is no
+CLI flag for changing its thresholds or providing a table-range mapping. The examples
 above configure a Python instance; they do not change the CLI's default instance.
 An integration that supplies detected ranges must pass a configured instance at
 that pipeline location.

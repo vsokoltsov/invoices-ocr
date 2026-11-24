@@ -99,11 +99,13 @@ class InvoicePreprocess:
         source: Adapter that reads and normalizes the source dataset.
         output_path: Destination Parquet or CSV file.
         model_step: Optional model preparation and rejection reporting step.
+        use_xy_cut: Apply block ordering after visual-row ordering and before labels.
     """
 
     source: InvoiceSource
     output_path: Path
     model_step: Callable[[pd.DataFrame], pd.DataFrame] | None = None
+    use_xy_cut: bool = True
 
     def load(self) -> pd.DataFrame:
         """Read the raw snapshot and report the source document count.
@@ -171,7 +173,9 @@ class InvoicePreprocess:
         Returns:
             A PipeFunc graph from raw Parquet to a processed invoice export.
         """
-        steps = [*self.source.normalization_steps(), OrderOCRWords(), XYCut()]
+        steps = [*self.source.normalization_steps(), OrderOCRWords()]
+        if self.use_xy_cut:
+            steps.append(XYCut())
         if self.model_step is not None:
             steps.append(self.model_step)
         functions = [

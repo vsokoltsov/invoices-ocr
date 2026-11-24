@@ -224,6 +224,9 @@ def preprocess_model(args: argparse.Namespace, settings: Settings) -> None:
         model_step=ModelPreparation(
             args.model, preprocessor, output.with_name(f"{output.stem}_rejected.csv")
         ),
+        use_xy_cut=args.use_xy_cut
+        if args.use_xy_cut is not None
+        else args.model != "bert" or not args.LINE_ITEMS_ONLY,
     ).run()
     print(path)
 
@@ -390,6 +393,13 @@ def build_parser(settings: Settings) -> argparse.ArgumentParser:
             exclude=tuple(
                 name for name in type(model_config).model_fields if name != selected
             ),
+        )
+        model_preprocess.add_argument(
+            "--xy-cut",
+            dest="use_xy_cut",
+            action=argparse.BooleanOptionalAction,
+            default=None,
+            help="Use block reading order; defaults to enabled for invoice body and LayoutLM, disabled for BERT line items.",
         )
         model_preprocess.set_defaults(handler=preprocess_model)
 
